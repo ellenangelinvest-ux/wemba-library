@@ -377,6 +377,130 @@ main {
     color: var(--primary);
 }
 
+/* Add Book Modal Enhancements */
+.scan-isbn-placeholder {
+    background: var(--gray-100);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.scan-isbn-placeholder p {
+    color: var(--gray-600);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+}
+
+.btn-scan {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-scan:hover {
+    background: var(--primary-light);
+}
+
+#add-book-reader {
+    width: 100%;
+    min-height: 200px;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+#stop-add-scan-btn {
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    margin: 1rem 0;
+    color: var(--gray-600);
+    font-size: 0.75rem;
+}
+
+.divider::before,
+.divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--gray-300);
+}
+
+.divider span {
+    padding: 0 0.75rem;
+}
+
+.input-with-btn {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-with-btn input {
+    flex: 1;
+}
+
+.btn-lookup {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-lookup:hover {
+    opacity: 0.9;
+}
+
+.book-preview {
+    display: flex;
+    gap: 1rem;
+    background: var(--gray-100);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.book-preview img {
+    width: 60px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.book-preview-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.book-preview .preview-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    color: var(--gray-800);
+}
+
+.book-preview .preview-author {
+    font-size: 0.8rem;
+    color: var(--gray-600);
+}
+
 /* Toast */
 .toast {
     position: fixed;

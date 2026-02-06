@@ -111,11 +111,41 @@
     <div id="add-book-modal" class="modal hidden">
         <div class="modal-content">
             <h2>Add New Book</h2>
+
+            <!-- Scan ISBN Option -->
+            <div id="add-book-scan-section">
+                <div id="add-book-scan-placeholder" class="scan-isbn-placeholder">
+                    <p>Scan barcode to auto-fill book info</p>
+                    <button type="button" class="btn-scan" onclick="startAddBookScanner()">
+                        📷 Scan ISBN
+                    </button>
+                </div>
+                <div id="add-book-reader" class="hidden"></div>
+                <button type="button" id="stop-add-scan-btn" class="btn-secondary btn-small hidden" onclick="stopAddBookScanner()">
+                    Stop Scanning
+                </button>
+            </div>
+
+            <div class="divider"><span>or enter manually</span></div>
+
             <form id="add-book-form">
                 <div class="form-group">
-                    <label for="new-isbn">ISBN (Barcode)</label>
-                    <input type="text" id="new-isbn" required placeholder="978-0-123456-78-9">
+                    <label for="new-isbn">ISBN</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="new-isbn" required placeholder="978-0-123456-78-9">
+                        <button type="button" class="btn-lookup" onclick="lookupISBN()">Look up</button>
+                    </div>
                 </div>
+
+                <!-- Book Preview (shown after lookup) -->
+                <div id="add-book-preview" class="book-preview hidden">
+                    <img id="add-book-cover" src="" alt="Book cover">
+                    <div class="book-preview-info">
+                        <p class="preview-title" id="preview-title"></p>
+                        <p class="preview-author" id="preview-author"></p>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label for="new-title">Title</label>
                     <input type="text" id="new-title" required placeholder="Book title">

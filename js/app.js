@@ -18,6 +18,7 @@ const CONFIG = {
 // STATE
 // ============================================
 let html5QrCode = null;
+let addBookScanner = null; // Separate scanner for Add Book modal
 let currentScannedISBN = null;
 let currentBookData = null;
 let booksCache = [];
@@ -684,10 +685,165 @@ function sendReminder(whatsapp, bookTitle, daysOverdue) {
 // ============================================
 function showAddBookModal() {
     document.getElementById('add-book-modal').classList.remove('hidden');
+    resetAddBookModal();
 }
 
 function hideAddBookModal() {
+    stopAddBookScanner();
     document.getElementById('add-book-modal').classList.add('hidden');
+    resetAddBookModal();
+}
+
+function resetAddBookModal() {
+    // Reset form
+    document.getElementById('add-book-form').reset();
+
+    // Hide preview
+    document.getElementById('add-book-preview').classList.add('hidden');
+
+    // Show scan placeholder, hide reader
+    document.getElementById('add-book-scan-placeholder').classList.remove('hidden');
+    document.getElementById('add-book-reader').classList.add('hidden');
+    document.getElementById('stop-add-scan-btn').classList.add('hidden');
+}
+
+// ============================================
+// ADD BOOK SCANNER
+// ============================================
+function startAddBookScanner() {
+    // Hide placeholder, show reader
+    document.getElementById('add-book-scan-placeholder').classList.add('hidden');
+    document.getElementById('add-book-reader').classList.remove('hidden');
+    document.getElementById('stop-add-scan-btn').classList.remove('hidden');
+
+    // Initialize scanner
+    if (!addBookScanner) {
+        addBookScanner = new Html5Qrcode("add-book-reader");
+    }
+
+    const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 100 },
+        aspectRatio: 1.5
+    };
+
+    addBookScanner.start(
+        { facingMode: "environment" },
+        config,
+        onAddBookScanSuccess,
+        () => {} // Ignore errors
+    ).catch(err => {
+        console.log("Add book scanner error:", err);
+        showToast("Camera access required", "error");
+        stopAddBookScanner();
+    });
+}
+
+function stopAddBookScanner() {
+    try {
+        if (addBookScanner && addBookScanner.isScanning) {
+            addBookScanner.stop().catch(err => console.log("Stop error:", err));
+        }
+    } catch (e) {
+        // Ignore
+    }
+
+    // Show placeholder, hide reader
+    const placeholder = document.getElementById('add-book-scan-placeholder');
+    const reader = document.getElementById('add-book-reader');
+    const stopBtn = document.getElementById('stop-add-scan-btn');
+
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (reader) reader.classList.add('hidden');
+    if (stopBtn) stopBtn.classList.add('hidden');
+}
+
+async function onAddBookScanSuccess(decodedText) {
+    // Vibrate for feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(100);
+    }
+
+    stopAddBookScanner();
+    showToast("ISBN scanned! Looking up book...", "");
+
+    // Set ISBN field
+    document.getElementById('new-isbn').value = decodedText;
+
+    // Look up book info
+    await lookupISBN();
+}
+
+// ============================================
+// BOOK LOOKUP (Open Library + Google Books)
+// ============================================
+async function lookupISBN() {
+    const isbn = document.getElementById('new-isbn').value.trim();
+
+    if (!isbn || isbn.length < 10) {
+        showToast("Enter a valid ISBN first", "error");
+        return;
+    }
+
+    showToast("Looking up book info...", "");
+
+    // Try Open Library first
+    let bookInfo = await fetchBookFromOpenLibrary(isbn);
+
+    // If not found, try Google Books API
+    if (!bookInfo.found) {
+        bookInfo = await fetchBookFromGoogleBooks(isbn);
+    }
+
+    if (bookInfo.found) {
+        // Fill form fields
+        document.getElementById('new-title').value = bookInfo.title;
+        document.getElementById('new-author').value = bookInfo.author;
+
+        // Show preview with cover
+        const preview = document.getElementById('add-book-preview');
+        const coverImg = document.getElementById('add-book-cover');
+        const previewTitle = document.getElementById('preview-title');
+        const previewAuthor = document.getElementById('preview-author');
+
+        coverImg.src = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
+        coverImg.onerror = () => {
+            coverImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120"><rect fill="%23ddd" width="80" height="120"/><text x="40" y="60" text-anchor="middle" fill="%23999" font-size="10">No Cover</text></svg>';
+        };
+        previewTitle.textContent = bookInfo.title;
+        previewAuthor.textContent = bookInfo.author;
+        preview.classList.remove('hidden');
+
+        showToast("Book found!", "success");
+    } else {
+        showToast("Book not found. Enter details manually.", "error");
+    }
+}
+
+async function fetchBookFromGoogleBooks(isbn) {
+    try {
+        const cleanISBN = isbn.replace(/[-\s]/g, '');
+        const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`);
+        const data = await response.json();
+
+        if (data.items && data.items.length > 0) {
+            const book = data.items[0].volumeInfo;
+            return {
+                isbn: isbn,
+                title: book.title || 'Unknown Title',
+                author: book.authors ? book.authors.join(', ') : 'Unknown Author',
+                publisher: book.publisher || '',
+                publishDate: book.publishedDate || '',
+                coverUrl: book.imageLinks ? book.imageLinks.thumbnail : null,
+                found: true
+            };
+        }
+
+        return { isbn: isbn, found: false };
+    } catch (error) {
+        console.error('Google Books API error:', error);
+        return { isbn: isbn, found: false };
+    }
 }
 
 // ============================================
