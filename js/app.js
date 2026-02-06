@@ -314,13 +314,14 @@ function hideActionForms() {
 async function submitAddBook() {
     const title = document.getElementById('add-title').value.trim();
     const author = document.getElementById('add-author').value.trim();
+    const donor = document.getElementById('add-donor').value.trim();
 
     if (!title || !author) {
         showToast("Please fill in title and author", "error");
         return;
     }
 
-    showToast("Adding book...", "");
+    showToast("Adding book to library...", "");
 
     try {
         const response = await fetch(CONFIG.API_URL, {
@@ -330,7 +331,10 @@ async function submitAddBook() {
                 action: 'addBook',
                 isbn: currentISBN,
                 title: title,
-                author: author
+                author: author,
+                donor: donor || '',
+                dateAdded: new Date().toISOString(),
+                coverUrl: currentBookInfo?.coverUrl || getCoverUrl(currentISBN, 'M')
             })
         });
 
@@ -339,9 +343,11 @@ async function submitAddBook() {
         if (result.success) {
             showToast("Book added to library!", "success");
             hideActionForms();
+            // Clear donor field
+            document.getElementById('add-donor').value = '';
             // Update status
             currentBookStatus = 'available';
-            document.getElementById('scanned-book-status').textContent = 'Available';
+            document.getElementById('scanned-book-status').textContent = 'Available in library';
             document.getElementById('scanned-book-status').className = 'book-status status-available';
             document.getElementById('btn-add-book').classList.add('hidden');
             document.getElementById('btn-borrow').classList.remove('hidden');
