@@ -30,8 +30,10 @@ let bookInfoCache = {}; // Cache for Open Library data
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initForms();
-    initScanner();
     setDefaultDueDate();
+
+    // Load books inventory on startup (default view)
+    loadBooks();
 
     // Register service worker for PWA
     if ('serviceWorker' in navigator) {
@@ -70,9 +72,15 @@ function switchView(viewName) {
         // Load data for specific views
         if (viewName === 'books') {
             loadBooks();
+            stopScanner(); // Stop scanner when leaving scan view
         } else if (viewName === 'overdue') {
             loadOverdue();
+            stopScanner();
         } else if (viewName === 'scan') {
+            // Initialize scanner only when entering scan view
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
             resetScanView();
             startScanner();
         }
@@ -147,10 +155,6 @@ function getCoverUrl(isbn, size = 'M') {
 // ============================================
 // BARCODE SCANNER
 // ============================================
-function initScanner() {
-    html5QrCode = new Html5Qrcode("reader");
-    startScanner();
-}
 
 function startScanner() {
     const config = {
@@ -171,8 +175,12 @@ function startScanner() {
 }
 
 function stopScanner() {
-    if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().catch(err => console.log("Scanner stop error:", err));
+    try {
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().catch(err => console.log("Scanner stop error:", err));
+        }
+    } catch (e) {
+        // Ignore errors when scanner not initialized
     }
 }
 
