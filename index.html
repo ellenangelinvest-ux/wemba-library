@@ -14,87 +14,111 @@
     <header>
         <h1>WEMBA SF Library</h1>
         <nav>
-            <button class="nav-btn active" data-view="books">Library</button>
+            <button class="nav-btn active" data-view="library">Library</button>
             <button class="nav-btn" data-view="scan">Scan</button>
             <button class="nav-btn" data-view="overdue">Overdue</button>
         </nav>
     </header>
 
     <main>
+        <!-- Library View (Browse/Search Only) -->
+        <section id="library-view" class="view active">
+            <div class="search-box">
+                <input type="text" id="book-search" placeholder="Search books by title, author, or ISBN...">
+            </div>
+            <div id="books-list" class="books-grid-container">
+                <p class="loading">Loading books...</p>
+            </div>
+        </section>
+
         <!-- Scan View -->
         <section id="scan-view" class="view">
-            <div class="scan-container">
-                <div id="scanner-placeholder">
-                    <div class="scanner-icon">📷</div>
-                    <p>Scan a book barcode to check in/out or add new books</p>
-                    <button class="btn-primary" id="start-scan-btn" onclick="startScannerWithPermission()">Start Scanning</button>
+            <!-- Step 1: Scan Button -->
+            <div id="scan-step-1" class="scan-step">
+                <div class="scan-prompt">
+                    <div class="scan-icon">📷</div>
+                    <h2>Scan Book Barcode</h2>
+                    <p>Scan to add, borrow, or return a book</p>
+                    <button class="btn-scan-large" onclick="startScanner()">
+                        Start Camera
+                    </button>
                 </div>
-                <div id="reader" class="hidden"></div>
-                <p id="scan-hint" class="scan-hint hidden">Point camera at book barcode</p>
-                <button id="stop-scan-btn" class="btn-secondary hidden" onclick="stopScannerAndReset()">Stop Scanning</button>
             </div>
 
-            <!-- Borrow Form (hidden until scan) -->
-            <div id="borrow-form" class="form-container hidden">
-                <h2>Borrow Book</h2>
-                <div class="book-info-with-cover">
-                    <img id="scanned-cover" class="book-cover-preview hidden" alt="Book cover">
-                    <div class="book-info-text">
-                        <p class="book-title" id="scanned-title">Loading...</p>
-                        <p class="book-author" id="scanned-author"></p>
-                        <p class="book-isbn">ISBN: <span id="scanned-isbn"></span></p>
+            <!-- Scanner Active -->
+            <div id="scan-step-camera" class="scan-step hidden">
+                <div id="scanner-reader"></div>
+                <p class="scan-hint">Point camera at book barcode</p>
+                <button class="btn-secondary" onclick="stopAndReset()">Cancel</button>
+            </div>
+
+            <!-- Step 2: Book Info + Actions -->
+            <div id="scan-step-2" class="scan-step hidden">
+                <div class="scanned-book-card">
+                    <img id="scanned-book-cover" src="" alt="Book cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22><rect fill=%22%23ddd%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2210%22>No Cover</text></svg>'">
+                    <div class="scanned-book-info">
+                        <h3 id="scanned-book-title">Book Title</h3>
+                        <p id="scanned-book-author">Author</p>
+                        <p class="isbn-display">ISBN: <span id="scanned-book-isbn"></span></p>
+                        <p id="scanned-book-status" class="book-status"></p>
                     </div>
                 </div>
-                <form id="checkout-form">
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button id="btn-add-book" class="btn-action btn-add" onclick="showAddForm()">
+                        <span class="btn-icon">➕</span>
+                        Add to Library
+                    </button>
+                    <button id="btn-borrow" class="btn-action btn-borrow" onclick="showBorrowForm()">
+                        <span class="btn-icon">📤</span>
+                        Borrow Book
+                    </button>
+                    <button id="btn-return" class="btn-action btn-return" onclick="confirmReturn()">
+                        <span class="btn-icon">📥</span>
+                        Return Book
+                    </button>
+                </div>
+
+                <!-- Borrow Form -->
+                <div id="borrow-form" class="action-form hidden">
+                    <h4>Borrower Information</h4>
                     <div class="form-group">
-                        <label for="borrower-name">Your Name</label>
+                        <label for="borrower-name">Name</label>
                         <input type="text" id="borrower-name" required placeholder="Enter your name">
                     </div>
                     <div class="form-group">
-                        <label for="whatsapp">WhatsApp Number</label>
-                        <input type="tel" id="whatsapp" required placeholder="+1 555 123 4567">
+                        <label for="borrower-phone">Phone / WhatsApp</label>
+                        <input type="tel" id="borrower-phone" required placeholder="+1 555 123 4567">
                     </div>
                     <div class="form-group">
                         <label for="due-date">Due Date</label>
                         <input type="date" id="due-date" required>
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="cancelBorrow()">Cancel</button>
-                        <button type="submit" class="btn-primary">Confirm Borrow</button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Return Confirmation (hidden until scan) -->
-            <div id="return-form" class="form-container hidden">
-                <h2>Return Book</h2>
-                <div class="book-info-with-cover">
-                    <img id="return-cover" class="book-cover-preview hidden" alt="Book cover">
-                    <div class="book-info-text">
-                        <p class="book-title" id="return-title"></p>
-                        <p class="book-isbn">ISBN: <span id="return-isbn"></span></p>
-                        <p><strong>Borrower:</strong> <span id="return-borrower"></span></p>
-                        <p><strong>Borrowed:</strong> <span id="return-borrow-date"></span></p>
+                        <button type="button" class="btn-secondary" onclick="hideActionForms()">Cancel</button>
+                        <button type="button" class="btn-primary" onclick="submitBorrow()">Confirm Borrow</button>
                     </div>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="cancelReturn()">Cancel</button>
-                    <button type="button" class="btn-primary" onclick="confirmReturn()">Confirm Return</button>
-                </div>
-            </div>
-        </section>
 
-        <!-- Books View -->
-        <section id="books-view" class="view active">
-            <div class="view-header">
-                <h2>Book Inventory</h2>
-                <button class="btn-small" onclick="showAddBookModal()">+ Add Book</button>
-            </div>
-            <div class="search-box">
-                <input type="text" id="book-search" placeholder="Search books...">
-            </div>
-            <div id="books-list" class="list-container">
-                <p class="loading">Loading books...</p>
+                <!-- Add Book Form (for new books) -->
+                <div id="add-form" class="action-form hidden">
+                    <h4>Confirm Book Details</h4>
+                    <div class="form-group">
+                        <label for="add-title">Title</label>
+                        <input type="text" id="add-title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="add-author">Author</label>
+                        <input type="text" id="add-author" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="hideActionForms()">Cancel</button>
+                        <button type="button" class="btn-primary" onclick="submitAddBook()">Add to Library</button>
+                    </div>
+                </div>
+
+                <button class="btn-text" onclick="stopAndReset()">← Scan Another Book</button>
             </div>
         </section>
 
@@ -106,64 +130,6 @@
             </div>
         </section>
     </main>
-
-    <!-- Add Book Modal -->
-    <div id="add-book-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Add New Book</h2>
-
-            <!-- Scan ISBN Option -->
-            <div id="add-book-scan-section">
-                <div id="add-book-scan-placeholder" class="scan-isbn-placeholder">
-                    <div class="scan-icon-large">📷</div>
-                    <p>Scan book barcode to auto-fill info</p>
-                    <button type="button" class="btn-scan-large" onclick="startAddBookScanner()">
-                        Start Camera to Scan ISBN
-                    </button>
-                </div>
-                <div id="add-book-reader-container" class="hidden">
-                    <div id="add-book-reader"></div>
-                    <button type="button" class="btn-stop-scan" onclick="stopAddBookScanner()">
-                        Stop Camera
-                    </button>
-                </div>
-            </div>
-
-            <div class="divider"><span>or enter manually</span></div>
-
-            <form id="add-book-form">
-                <div class="form-group">
-                    <label for="new-isbn">ISBN</label>
-                    <div class="input-with-btn">
-                        <input type="text" id="new-isbn" required placeholder="978-0-123456-78-9">
-                        <button type="button" class="btn-lookup" onclick="lookupISBN()">Look up</button>
-                    </div>
-                </div>
-
-                <!-- Book Preview (shown after lookup) -->
-                <div id="add-book-preview" class="book-preview hidden">
-                    <img id="add-book-cover" src="" alt="Book cover">
-                    <div class="book-preview-info">
-                        <p class="preview-title" id="preview-title"></p>
-                        <p class="preview-author" id="preview-author"></p>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="new-title">Title</label>
-                    <input type="text" id="new-title" required placeholder="Book title">
-                </div>
-                <div class="form-group">
-                    <label for="new-author">Author</label>
-                    <input type="text" id="new-author" required placeholder="Author name">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="hideAddBookModal()">Cancel</button>
-                    <button type="submit" class="btn-primary">Add Book</button>
-                </div>
-            </form>
-        </div>
-    </div>
 
     <!-- Toast Notification -->
     <div id="toast" class="toast hidden"></div>

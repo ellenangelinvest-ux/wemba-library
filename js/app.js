@@ -1,578 +1,284 @@
 // WEMBA SF Library Tracker - Main Application
 
 // ============================================
-// CONFIGURATION - Update this after setup!
+// CONFIGURATION
 // ============================================
 const CONFIG = {
-    // Google Apps Script Web App URL
     API_URL: 'https://script.google.com/macros/s/AKfycbx72uEUC6oyXgiJbp8kDbLt4b5I67mlq_CsCqNE8ralzUJDgwMKlz_maJqcIwXpdbwc/exec',
-
-    // Open Library API (free, no key required)
     OPEN_LIBRARY_API: 'https://openlibrary.org',
-
-    // Default loan period in days
     DEFAULT_LOAN_DAYS: 14
 };
 
 // ============================================
 // STATE
 // ============================================
-let html5QrCode = null;
-let addBookScanner = null; // Separate scanner for Add Book modal
-let currentScannedISBN = null;
-let currentBookData = null;
+let scanner = null;
+let currentISBN = null;
+let currentBookInfo = null;
+let currentBookStatus = null; // 'new', 'available', 'borrowed'
 let booksCache = [];
-let transactionsCache = [];
-let bookInfoCache = {}; // Cache for Open Library data
 
 // ============================================
 // INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
-    initForms();
-    setDefaultDueDate();
-
-    // Load books inventory on startup (default view)
     loadBooks();
-
-    // Register service worker for PWA
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js')
-            .then(() => console.log('Service Worker registered'))
-            .catch(err => console.log('Service Worker registration failed:', err));
-    }
+    setDefaultDueDate();
 });
 
 // ============================================
 // NAVIGATION
 // ============================================
 function initNavigation() {
-    const navButtons = document.querySelectorAll('.nav-btn');
-    navButtons.forEach(btn => {
+    document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const viewName = btn.dataset.view;
             switchView(viewName);
-
-            // Update active state
-            navButtons.forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
         });
     });
 }
 
 function switchView(viewName) {
-    // Hide all views
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(`${viewName}-view`).classList.add('active');
 
-    // Show selected view
-    const view = document.getElementById(`${viewName}-view`);
-    if (view) {
-        view.classList.add('active');
+    // Stop scanner when leaving scan view
+    if (viewName !== 'scan') {
+        stopScanner();
+    }
 
-        // Load data for specific views
-        if (viewName === 'books') {
-            loadBooks();
-            stopScannerAndReset(); // Stop scanner when leaving scan view
-        } else if (viewName === 'overdue') {
-            loadOverdue();
-            stopScannerAndReset();
-        } else if (viewName === 'scan') {
-            // Just show the scan view with start button, don't auto-start camera
-            resetScanView();
-        }
+    // Load data for views
+    if (viewName === 'library') {
+        loadBooks();
+    } else if (viewName === 'overdue') {
+        loadOverdue();
+    } else if (viewName === 'scan') {
+        resetScanView();
     }
 }
 
 // ============================================
-// OPEN LIBRARY API - Book Info & Covers
+// SCANNER
 // ============================================
-async function fetchBookFromOpenLibrary(isbn) {
-    // Check cache first
-    if (bookInfoCache[isbn]) {
-        return bookInfoCache[isbn];
-    }
-
-    try {
-        // Clean ISBN (remove dashes)
-        const cleanISBN = isbn.replace(/[-\s]/g, '');
-
-        // Fetch from Open Library
-        const response = await fetch(`${CONFIG.OPEN_LIBRARY_API}/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`);
-        const data = await response.json();
-
-        const key = `ISBN:${cleanISBN}`;
-        if (data[key]) {
-            const book = data[key];
-            const bookInfo = {
-                isbn: isbn,
-                title: book.title || 'Unknown Title',
-                author: book.authors ? book.authors.map(a => a.name).join(', ') : 'Unknown Author',
-                publisher: book.publishers ? book.publishers[0].name : '',
-                publishDate: book.publish_date || '',
-                pages: book.number_of_pages || '',
-                coverUrl: book.cover ? book.cover.medium : null,
-                coverUrlLarge: book.cover ? book.cover.large : null,
-                coverUrlSmall: book.cover ? book.cover.small : null,
-                subjects: book.subjects ? book.subjects.slice(0, 3).map(s => s.name) : [],
-                found: true
-            };
-
-            // Cache the result
-            bookInfoCache[isbn] = bookInfo;
-            return bookInfo;
-        }
-
-        // Book not found in Open Library
-        return {
-            isbn: isbn,
-            title: 'Unknown Title',
-            author: 'Unknown Author',
-            coverUrl: null,
-            found: false
-        };
-    } catch (error) {
-        console.error('Open Library API error:', error);
-        return {
-            isbn: isbn,
-            title: 'Unknown Title',
-            author: 'Unknown Author',
-            coverUrl: null,
-            found: false
-        };
-    }
-}
-
-// Get cover URL directly by ISBN (faster for lists)
-function getCoverUrl(isbn, size = 'M') {
-    const cleanISBN = isbn.replace(/[-\s]/g, '');
-    return `https://covers.openlibrary.org/b/isbn/${cleanISBN}-${size}.jpg`;
-}
-
-// ============================================
-// BARCODE SCANNER
-// ============================================
-
-function startScannerWithPermission() {
-    // Hide placeholder, show reader
-    document.getElementById('scanner-placeholder').classList.add('hidden');
-    document.getElementById('reader').classList.remove('hidden');
-    document.getElementById('scan-hint').classList.remove('hidden');
-    document.getElementById('stop-scan-btn').classList.remove('hidden');
-
-    // Initialize scanner if needed
-    if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("reader");
-    }
-
-    startScanner();
-}
-
-function stopScannerAndReset() {
-    stopScanner();
-
-    // Show placeholder, hide reader
-    const placeholder = document.getElementById('scanner-placeholder');
-    const reader = document.getElementById('reader');
-    const hint = document.getElementById('scan-hint');
-    const stopBtn = document.getElementById('stop-scan-btn');
-
-    if (placeholder) placeholder.classList.remove('hidden');
-    if (reader) reader.classList.add('hidden');
-    if (hint) hint.classList.add('hidden');
-    if (stopBtn) stopBtn.classList.add('hidden');
-}
-
 function startScanner() {
-    const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 100 },
-        aspectRatio: 1.0
-    };
+    console.log("Starting scanner...");
 
-    html5QrCode.start(
+    document.getElementById('scan-step-1').classList.add('hidden');
+    document.getElementById('scan-step-camera').classList.remove('hidden');
+    document.getElementById('scan-step-2').classList.add('hidden');
+
+    if (!scanner) {
+        scanner = new Html5Qrcode("scanner-reader");
+    }
+
+    scanner.start(
         { facingMode: "environment" },
-        config,
+        { fps: 10, qrbox: { width: 250, height: 100 } },
         onScanSuccess,
-        onScanError
-    ).catch(err => {
-        console.log("Scanner start error:", err);
-        showToast("Camera access required for scanning", "error");
+        () => {} // Ignore errors
+    ).then(() => {
+        showToast("Camera ready - scan barcode", "success");
+    }).catch(err => {
+        console.error("Scanner error:", err);
+        showToast("Camera access denied", "error");
+        resetScanView();
     });
 }
 
 function stopScanner() {
-    try {
-        if (html5QrCode && html5QrCode.isScanning) {
-            html5QrCode.stop().catch(err => console.log("Scanner stop error:", err));
-        }
-    } catch (e) {
-        // Ignore errors when scanner not initialized
+    if (scanner && scanner.isScanning) {
+        scanner.stop().catch(err => console.log("Stop error:", err));
     }
 }
 
-function onScanSuccess(decodedText, decodedResult) {
-    // Vibrate for feedback if supported
-    if (navigator.vibrate) {
-        navigator.vibrate(100);
-    }
+function stopAndReset() {
+    stopScanner();
+    resetScanView();
+}
+
+function resetScanView() {
+    document.getElementById('scan-step-1').classList.remove('hidden');
+    document.getElementById('scan-step-camera').classList.add('hidden');
+    document.getElementById('scan-step-2').classList.add('hidden');
+    hideActionForms();
+    currentISBN = null;
+    currentBookInfo = null;
+    currentBookStatus = null;
+}
+
+async function onScanSuccess(isbn) {
+    console.log("Scanned:", isbn);
+
+    if (navigator.vibrate) navigator.vibrate(200);
 
     stopScanner();
-    currentScannedISBN = decodedText;
+    currentISBN = isbn;
 
-    // Check if book exists and its status
-    checkBookStatus(decodedText);
-}
+    showToast("Looking up book...", "");
 
-function onScanError(error) {
-    // Ignore scan errors (no barcode in frame)
+    // Look up book info
+    await lookupAndDisplayBook(isbn);
 }
 
 // ============================================
-// BOOK STATUS CHECK
+// BOOK LOOKUP
 // ============================================
-async function checkBookStatus(isbn) {
+async function lookupAndDisplayBook(isbn) {
+    // First check if book exists in our library
+    let libraryBook = await checkLibraryStatus(isbn);
+
+    // Get book details from Open Library / Google Books
+    let bookInfo = await fetchBookInfo(isbn);
+    currentBookInfo = bookInfo;
+
+    // Display book info
+    document.getElementById('scanned-book-isbn').textContent = isbn;
+    document.getElementById('scanned-book-title').textContent = bookInfo.title;
+    document.getElementById('scanned-book-author').textContent = bookInfo.author;
+    document.getElementById('scanned-book-cover').src = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
+
+    // Pre-fill add form
+    document.getElementById('add-title').value = bookInfo.title;
+    document.getElementById('add-author').value = bookInfo.author;
+
+    // Determine status and show appropriate buttons
+    const statusEl = document.getElementById('scanned-book-status');
+    const btnAdd = document.getElementById('btn-add-book');
+    const btnBorrow = document.getElementById('btn-borrow');
+    const btnReturn = document.getElementById('btn-return');
+
+    if (!libraryBook) {
+        // Book not in library
+        currentBookStatus = 'new';
+        statusEl.textContent = 'Not in library';
+        statusEl.className = 'book-status status-new';
+        btnAdd.classList.remove('hidden');
+        btnBorrow.classList.add('hidden');
+        btnReturn.classList.add('hidden');
+    } else if (libraryBook.status === 'Available') {
+        // Book available to borrow
+        currentBookStatus = 'available';
+        statusEl.textContent = 'Available';
+        statusEl.className = 'book-status status-available';
+        btnAdd.classList.add('hidden');
+        btnBorrow.classList.remove('hidden');
+        btnReturn.classList.add('hidden');
+    } else {
+        // Book is borrowed
+        currentBookStatus = 'borrowed';
+        statusEl.textContent = `Borrowed by ${libraryBook.currentBorrower || 'someone'}`;
+        statusEl.className = 'book-status status-borrowed';
+        btnAdd.classList.add('hidden');
+        btnBorrow.classList.add('hidden');
+        btnReturn.classList.remove('hidden');
+    }
+
+    // Show step 2
+    document.getElementById('scan-step-1').classList.add('hidden');
+    document.getElementById('scan-step-camera').classList.add('hidden');
+    document.getElementById('scan-step-2').classList.remove('hidden');
+
+    showToast("Book found!", "success");
+}
+
+async function fetchBookInfo(isbn) {
+    const cleanISBN = isbn.replace(/[-\s]/g, '');
+
+    // Try Open Library
     try {
-        showToast("Looking up book...", "");
+        const response = await fetch(`${CONFIG.OPEN_LIBRARY_API}/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`);
+        const data = await response.json();
+        const key = `ISBN:${cleanISBN}`;
 
-        // First, fetch book info from Open Library (for cover & details)
-        const openLibraryData = await fetchBookFromOpenLibrary(isbn);
-
-        // Then check our tracking system for borrow status
-        let trackingData = null;
-        try {
-            const response = await fetch(`${CONFIG.API_URL}?action=getBook&isbn=${encodeURIComponent(isbn)}`);
-            trackingData = await response.json();
-        } catch (e) {
-            // Tracking system not available - that's OK for demo
-        }
-
-        // Combine data
-        const bookData = {
-            ...openLibraryData,
-            status: trackingData?.status || 'Available',
-            currentBorrower: trackingData?.currentBorrower || null,
-            borrowDate: trackingData?.borrowDate || null,
-            dueDate: trackingData?.dueDate || null
-        };
-
-        currentBookData = bookData;
-
-        if (bookData.status === 'Borrowed') {
-            showReturnForm(isbn, bookData);
-        } else {
-            showBorrowForm(isbn, bookData);
-        }
-    } catch (error) {
-        console.error('Error checking book:', error);
-
-        // Fallback: still try to get book info from Open Library
-        const openLibraryData = await fetchBookFromOpenLibrary(isbn);
-        currentBookData = { ...openLibraryData, status: 'Available' };
-        showBorrowForm(isbn, currentBookData);
-    }
-}
-
-// ============================================
-// BORROW FLOW
-// ============================================
-function showBorrowForm(isbn, bookData) {
-    document.getElementById('scanned-isbn').textContent = isbn;
-    document.getElementById('scanned-title').textContent = bookData.title || 'Unknown Title';
-
-    // Show author if available
-    const authorEl = document.getElementById('scanned-author');
-    if (authorEl) {
-        authorEl.textContent = bookData.author || '';
-    }
-
-    // Show cover image if available
-    const coverEl = document.getElementById('scanned-cover');
-    if (coverEl) {
-        if (bookData.coverUrl) {
-            coverEl.src = bookData.coverUrl;
-            coverEl.classList.remove('hidden');
-            coverEl.onerror = () => {
-                coverEl.src = getCoverUrl(isbn, 'M');
+        if (data[key]) {
+            const book = data[key];
+            return {
+                title: book.title || 'Unknown Title',
+                author: book.authors ? book.authors.map(a => a.name).join(', ') : 'Unknown Author',
+                coverUrl: book.cover ? book.cover.medium : null,
+                found: true
             };
-        } else {
-            // Try direct cover URL
-            coverEl.src = getCoverUrl(isbn, 'M');
-            coverEl.classList.remove('hidden');
-            coverEl.onerror = () => {
-                coverEl.classList.add('hidden');
-            };
         }
+    } catch (e) {
+        console.log("Open Library error:", e);
     }
 
-    document.querySelector('.scan-container').classList.add('hidden');
-    document.getElementById('borrow-form').classList.remove('hidden');
-    document.getElementById('return-form').classList.add('hidden');
-}
-
-function cancelBorrow() {
-    resetScanView();
-    startScanner();
-}
-
-function initForms() {
-    // Borrow form submission
-    document.getElementById('checkout-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const borrowerName = document.getElementById('borrower-name').value.trim();
-        const whatsapp = document.getElementById('whatsapp').value.trim();
-        const dueDate = document.getElementById('due-date').value;
-
-        if (!borrowerName || !whatsapp || !dueDate) {
-            showToast("Please fill all fields", "error");
-            return;
-        }
-
-        await submitBorrow(currentScannedISBN, borrowerName, whatsapp, dueDate);
-    });
-
-    // Add book form submission (for manual add)
-    const addBookForm = document.getElementById('add-book-form');
-    if (addBookForm) {
-        addBookForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const isbn = document.getElementById('new-isbn').value.trim();
-            const title = document.getElementById('new-title').value.trim();
-            const author = document.getElementById('new-author').value.trim();
-
-            await addBook(isbn, title, author);
-        });
-    }
-
-    // Book search
-    const searchInput = document.getElementById('book-search');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            filterBooks(e.target.value);
-        });
-    }
-
-    // ISBN lookup for manual add
-    const isbnInput = document.getElementById('new-isbn');
-    if (isbnInput) {
-        isbnInput.addEventListener('blur', async () => {
-            const isbn = isbnInput.value.trim();
-            if (isbn.length >= 10) {
-                showToast("Looking up book info...", "");
-                const bookInfo = await fetchBookFromOpenLibrary(isbn);
-                if (bookInfo.found) {
-                    document.getElementById('new-title').value = bookInfo.title;
-                    document.getElementById('new-author').value = bookInfo.author;
-                    showToast("Book info found!", "success");
-                }
-            }
-        });
-    }
-}
-
-async function submitBorrow(isbn, name, whatsapp, dueDate) {
+    // Try Google Books
     try {
-        showToast("Processing...", "");
-
-        const borrowDate = new Date().toISOString();
-
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'borrow',
-                isbn: isbn,
-                title: currentBookData?.title || 'Unknown',
-                author: currentBookData?.author || 'Unknown',
-                borrowerName: name,
-                whatsapp: whatsapp,
-                borrowDate: borrowDate,
-                dueDate: dueDate
-            })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showToast("Book borrowed successfully!", "success");
-            document.getElementById('checkout-form').reset();
-            setDefaultDueDate();
-            resetScanView();
-            setTimeout(startScanner, 1500);
-        } else {
-            showToast(result.error || "Borrow failed", "error");
-        }
-    } catch (error) {
-        console.error('Borrow error:', error);
-
-        // Demo mode
-        if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
-            showToast("Book borrowed! (Demo mode)", "success");
-            document.getElementById('checkout-form').reset();
-            setDefaultDueDate();
-            resetScanView();
-            setTimeout(startScanner, 1500);
-        } else {
-            showToast("Connection error", "error");
-        }
-    }
-}
-
-// ============================================
-// RETURN FLOW
-// ============================================
-function showReturnForm(isbn, bookData) {
-    document.getElementById('return-isbn').textContent = isbn;
-    document.getElementById('return-title').textContent = bookData.title || 'Unknown';
-    document.getElementById('return-borrower').textContent = bookData.currentBorrower || 'Unknown';
-    document.getElementById('return-borrow-date').textContent = formatDate(bookData.borrowDate);
-
-    // Show cover image
-    const coverEl = document.getElementById('return-cover');
-    if (coverEl) {
-        coverEl.src = bookData.coverUrl || getCoverUrl(isbn, 'M');
-        coverEl.classList.remove('hidden');
-        coverEl.onerror = () => coverEl.classList.add('hidden');
-    }
-
-    document.querySelector('.scan-container').classList.add('hidden');
-    document.getElementById('borrow-form').classList.add('hidden');
-    document.getElementById('return-form').classList.remove('hidden');
-}
-
-function cancelReturn() {
-    resetScanView();
-    startScanner();
-}
-
-async function confirmReturn() {
-    try {
-        showToast("Processing return...", "");
-
-        const returnDate = new Date().toISOString();
-
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'return',
-                isbn: currentScannedISBN,
-                returnDate: returnDate
-            })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showToast("Book returned successfully!", "success");
-            resetScanView();
-            setTimeout(startScanner, 1500);
-        } else {
-            showToast(result.error || "Return failed", "error");
-        }
-    } catch (error) {
-        console.error('Return error:', error);
-
-        // Demo mode
-        if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
-            showToast("Book returned! (Demo mode)", "success");
-            resetScanView();
-            setTimeout(startScanner, 1500);
-        } else {
-            showToast("Connection error", "error");
-        }
-    }
-}
-
-// ============================================
-// BOOKS INVENTORY (with covers from Open Library)
-// ============================================
-async function loadBooks() {
-    const container = document.getElementById('books-list');
-    container.innerHTML = '<p class="loading">Loading books...</p>';
-
-    try {
-        const response = await fetch(`${CONFIG.API_URL}?action=getBooks`);
+        const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`);
         const data = await response.json();
 
-        booksCache = data.books || [];
-
-        // Enrich with cover URLs
-        booksCache = booksCache.map(book => ({
-            ...book,
-            coverUrl: getCoverUrl(book.isbn, 'M')
-        }));
-
-        renderBooks(booksCache);
-    } catch (error) {
-        console.error('Error loading books:', error);
-
-        // Demo mode with real book ISBNs
-        if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
-            booksCache = [
-                { isbn: '9780134685991', title: 'Effective Java', author: 'Joshua Bloch', status: 'Available' },
-                { isbn: '9780596517748', title: 'JavaScript: The Good Parts', author: 'Douglas Crockford', status: 'Available' },
-                { isbn: '9781491950357', title: 'Building Microservices', author: 'Sam Newman', status: 'Borrowed', currentBorrower: 'John Doe' }
-            ].map(book => ({ ...book, coverUrl: getCoverUrl(book.isbn, 'M') }));
-
-            renderBooks(booksCache);
-            showToast("Demo mode - showing sample books", "");
-        } else {
-            container.innerHTML = '<p class="empty-state">Failed to load books. Check connection.</p>';
+        if (data.items && data.items.length > 0) {
+            const book = data.items[0].volumeInfo;
+            return {
+                title: book.title || 'Unknown Title',
+                author: book.authors ? book.authors.join(', ') : 'Unknown Author',
+                coverUrl: book.imageLinks ? book.imageLinks.thumbnail : null,
+                found: true
+            };
         }
+    } catch (e) {
+        console.log("Google Books error:", e);
+    }
+
+    return { title: 'Unknown Title', author: 'Unknown Author', coverUrl: null, found: false };
+}
+
+async function checkLibraryStatus(isbn) {
+    try {
+        const response = await fetch(`${CONFIG.API_URL}?action=getBook&isbn=${encodeURIComponent(isbn)}`);
+        const data = await response.json();
+        if (data.error) return null;
+        return data;
+    } catch (e) {
+        console.log("Library check error:", e);
+        return null;
     }
 }
 
-function renderBooks(books) {
-    const container = document.getElementById('books-list');
+function getCoverUrl(isbn, size = 'M') {
+    return `https://covers.openlibrary.org/b/isbn/${isbn.replace(/[-\s]/g, '')}-${size}.jpg`;
+}
 
-    if (!books || books.length === 0) {
-        container.innerHTML = '<div class="empty-state"><p>No books in inventory</p><p>Scan a book to add it</p></div>';
+// ============================================
+// ACTIONS
+// ============================================
+function showAddForm() {
+    hideActionForms();
+    document.getElementById('add-form').classList.remove('hidden');
+}
+
+function showBorrowForm() {
+    hideActionForms();
+    document.getElementById('borrow-form').classList.remove('hidden');
+}
+
+function hideActionForms() {
+    document.getElementById('add-form').classList.add('hidden');
+    document.getElementById('borrow-form').classList.add('hidden');
+}
+
+async function submitAddBook() {
+    const title = document.getElementById('add-title').value.trim();
+    const author = document.getElementById('add-author').value.trim();
+
+    if (!title || !author) {
+        showToast("Please fill in title and author", "error");
         return;
     }
 
-    container.innerHTML = `
-        <div class="books-grid">
-            ${books.map(book => `
-                <div class="book-card ${book.status === 'Borrowed' ? 'borrowed' : ''}">
-                    <div class="book-cover">
-                        <img src="${book.coverUrl}"
-                             alt="${escapeHtml(book.title)}"
-                             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22180%22><rect fill=%22%23ddd%22 width=%22120%22 height=%22180%22/><text x=%2260%22 y=%2290%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2212%22>No Cover</text></svg>'">
-                        ${book.status === 'Borrowed' ? '<span class="borrowed-badge">Borrowed</span>' : ''}
-                    </div>
-                    <div class="book-details">
-                        <h3>${escapeHtml(book.title)}</h3>
-                        <p class="author">${escapeHtml(book.author)}</p>
-                        ${book.status === 'Borrowed' ? `<p class="borrower">By: ${escapeHtml(book.currentBorrower || 'Unknown')}</p>` : ''}
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-    `;
-}
+    showToast("Adding book...", "");
 
-function filterBooks(query) {
-    const filtered = booksCache.filter(book =>
-        book.title.toLowerCase().includes(query.toLowerCase()) ||
-        book.author.toLowerCase().includes(query.toLowerCase()) ||
-        book.isbn.includes(query)
-    );
-    renderBooks(filtered);
-}
-
-async function addBook(isbn, title, author) {
     try {
-        showToast("Adding book...", "");
-
         const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action: 'addBook',
-                isbn: isbn,
+                isbn: currentISBN,
                 title: title,
                 author: author
             })
@@ -581,65 +287,176 @@ async function addBook(isbn, title, author) {
         const result = await response.json();
 
         if (result.success) {
-            showToast("Book added!", "success");
-            hideAddBookModal();
-            document.getElementById('add-book-form').reset();
-            loadBooks();
+            showToast("Book added to library!", "success");
+            hideActionForms();
+            // Update status
+            currentBookStatus = 'available';
+            document.getElementById('scanned-book-status').textContent = 'Available';
+            document.getElementById('scanned-book-status').className = 'book-status status-available';
+            document.getElementById('btn-add-book').classList.add('hidden');
+            document.getElementById('btn-borrow').classList.remove('hidden');
         } else {
             showToast(result.error || "Failed to add book", "error");
         }
-    } catch (error) {
-        console.error('Add book error:', error);
+    } catch (e) {
+        console.error("Add book error:", e);
+        showToast("Connection error", "error");
+    }
+}
 
-        // Demo mode
-        if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
-            showToast("Book added! (Demo mode)", "success");
-            hideAddBookModal();
-            document.getElementById('add-book-form').reset();
+async function submitBorrow() {
+    const name = document.getElementById('borrower-name').value.trim();
+    const phone = document.getElementById('borrower-phone').value.trim();
+    const dueDate = document.getElementById('due-date').value;
+
+    if (!name || !phone || !dueDate) {
+        showToast("Please fill in all fields", "error");
+        return;
+    }
+
+    showToast("Processing...", "");
+
+    try {
+        const response = await fetch(CONFIG.API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'borrow',
+                isbn: currentISBN,
+                title: currentBookInfo?.title || 'Unknown',
+                author: currentBookInfo?.author || 'Unknown',
+                borrowerName: name,
+                whatsapp: phone,
+                borrowDate: new Date().toISOString(),
+                dueDate: dueDate
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast("Book borrowed successfully!", "success");
+            // Clear form
+            document.getElementById('borrower-name').value = '';
+            document.getElementById('borrower-phone').value = '';
+            setDefaultDueDate();
+            // Reset to scan another
+            setTimeout(resetScanView, 1500);
         } else {
-            showToast("Connection error", "error");
+            showToast(result.error || "Borrow failed", "error");
         }
+    } catch (e) {
+        console.error("Borrow error:", e);
+        showToast("Connection error", "error");
+    }
+}
+
+async function confirmReturn() {
+    showToast("Processing return...", "");
+
+    try {
+        const response = await fetch(CONFIG.API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'return',
+                isbn: currentISBN,
+                returnDate: new Date().toISOString()
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast("Book returned successfully!", "success");
+            setTimeout(resetScanView, 1500);
+        } else {
+            showToast(result.error || "Return failed", "error");
+        }
+    } catch (e) {
+        console.error("Return error:", e);
+        showToast("Connection error", "error");
     }
 }
 
 // ============================================
-// OVERDUE BOOKS
+// LIBRARY VIEW
+// ============================================
+async function loadBooks() {
+    const container = document.getElementById('books-list');
+    container.innerHTML = '<p class="loading">Loading books...</p>';
+
+    try {
+        const response = await fetch(`${CONFIG.API_URL}?action=getBooks`);
+        const data = await response.json();
+        booksCache = (data.books || []).map(book => ({
+            ...book,
+            coverUrl: getCoverUrl(book.isbn, 'M')
+        }));
+        renderBooks(booksCache);
+    } catch (e) {
+        console.error("Load books error:", e);
+        container.innerHTML = '<p class="empty-state">Failed to load books</p>';
+    }
+}
+
+function renderBooks(books) {
+    const container = document.getElementById('books-list');
+
+    if (!books || books.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No books in library yet</p><p>Go to Scan tab to add books</p></div>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="books-grid">
+            ${books.map(book => `
+                <div class="book-card ${book.status === 'Borrowed' ? 'borrowed' : ''}">
+                    <div class="book-cover">
+                        <img src="${book.coverUrl}" alt="${book.title}"
+                             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22180%22><rect fill=%22%23ddd%22 width=%22120%22 height=%22180%22/><text x=%2260%22 y=%2290%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2212%22>No Cover</text></svg>'">
+                        ${book.status === 'Borrowed' ? '<span class="borrowed-badge">Borrowed</span>' : ''}
+                    </div>
+                    <div class="book-details">
+                        <h3>${book.title}</h3>
+                        <p class="author">${book.author}</p>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+// Search functionality
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('book-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = booksCache.filter(book =>
+                book.title.toLowerCase().includes(query) ||
+                book.author.toLowerCase().includes(query) ||
+                book.isbn.includes(query)
+            );
+            renderBooks(filtered);
+        });
+    }
+});
+
+// ============================================
+// OVERDUE VIEW
 // ============================================
 async function loadOverdue() {
     const container = document.getElementById('overdue-list');
-    container.innerHTML = '<p class="loading">Loading overdue books...</p>';
+    container.innerHTML = '<p class="loading">Loading...</p>';
 
     try {
         const response = await fetch(`${CONFIG.API_URL}?action=getOverdue`);
         const data = await response.json();
-
-        const overdueWithCovers = (data.overdue || []).map(item => ({
-            ...item,
-            coverUrl: getCoverUrl(item.isbn, 'S')
-        }));
-
-        renderOverdue(overdueWithCovers);
-    } catch (error) {
-        console.error('Error loading overdue:', error);
-
-        // Demo mode
-        if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
-            const demoOverdue = [
-                {
-                    isbn: '9780596517748',
-                    title: 'JavaScript: The Good Parts',
-                    borrowerName: 'Jane Smith',
-                    whatsapp: '+1234567890',
-                    dueDate: '2025-01-15',
-                    daysOverdue: 5,
-                    coverUrl: getCoverUrl('9780596517748', 'S')
-                }
-            ];
-            renderOverdue(demoOverdue);
-            showToast("Demo mode - showing sample data", "");
-        } else {
-            container.innerHTML = '<p class="empty-state">Failed to load. Check connection.</p>';
-        }
+        renderOverdue(data.overdue || []);
+    } catch (e) {
+        console.error("Load overdue error:", e);
+        container.innerHTML = '<p class="empty-state">Failed to load</p>';
     }
 }
 
@@ -647,20 +464,20 @@ function renderOverdue(overdueList) {
     const container = document.getElementById('overdue-list');
 
     if (!overdueList || overdueList.length === 0) {
-        container.innerHTML = '<div class="empty-state"><p>No overdue books!</p><p>All books returned on time</p></div>';
+        container.innerHTML = '<div class="empty-state"><p>No overdue books!</p></div>';
         return;
     }
 
     container.innerHTML = overdueList.map(item => `
-        <div class="list-item overdue-item">
-            <img class="overdue-cover" src="${item.coverUrl}" alt=""
+        <div class="overdue-item">
+            <img src="${getCoverUrl(item.isbn, 'S')}" alt="" class="overdue-cover"
                  onerror="this.style.display='none'">
-            <div class="list-item-info">
-                <h3>${escapeHtml(item.title)}</h3>
-                <p>Borrower: ${escapeHtml(item.borrowerName)}</p>
+            <div class="overdue-info">
+                <h3>${item.title}</h3>
+                <p>Borrower: ${item.borrowerName}</p>
                 <p>Due: ${formatDate(item.dueDate)}</p>
                 <p class="days-overdue">${item.daysOverdue} days overdue</p>
-                <button class="whatsapp-btn" onclick="sendReminder('${escapeHtml(item.whatsapp)}', '${escapeHtml(item.title)}', ${item.daysOverdue})">
+                <button class="whatsapp-btn" onclick="sendReminder('${item.whatsapp}', '${item.title}', ${item.daysOverdue})">
                     Send WhatsApp Reminder
                 </button>
             </div>
@@ -668,333 +485,37 @@ function renderOverdue(overdueList) {
     `).join('');
 }
 
-function sendReminder(whatsapp, bookTitle, daysOverdue) {
+function sendReminder(phone, title, days) {
     const message = encodeURIComponent(
-        `Hi! This is a reminder from WEMBA SF Library. The book "${bookTitle}" is ${daysOverdue} days overdue. Please return it at your earliest convenience. Thank you!`
+        `Hi! Reminder from WEMBA SF Library: "${title}" is ${days} days overdue. Please return it soon. Thank you!`
     );
-
-    // Clean phone number (remove spaces, dashes)
-    const cleanNumber = whatsapp.replace(/[\s\-\(\)]/g, '');
-
-    // Open WhatsApp with pre-filled message
-    window.open(`https://wa.me/${cleanNumber}?text=${message}`, '_blank');
+    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+    window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
 }
 
 // ============================================
-// MODAL FUNCTIONS
+// UTILITIES
 // ============================================
-function showAddBookModal() {
-    document.getElementById('add-book-modal').classList.remove('hidden');
-    resetAddBookModal();
-}
-
-function hideAddBookModal() {
-    stopAddBookScanner();
-    document.getElementById('add-book-modal').classList.add('hidden');
-    resetAddBookModal();
-}
-
-function resetAddBookModal() {
-    // Reset form
-    const form = document.getElementById('add-book-form');
-    if (form) form.reset();
-
-    // Hide preview
-    const preview = document.getElementById('add-book-preview');
-    if (preview) preview.classList.add('hidden');
-
-    // Show scan placeholder, hide reader container
-    const placeholder = document.getElementById('add-book-scan-placeholder');
-    const readerContainer = document.getElementById('add-book-reader-container');
-
-    if (placeholder) placeholder.classList.remove('hidden');
-    if (readerContainer) readerContainer.classList.add('hidden');
-}
-
-// ============================================
-// ADD BOOK SCANNER
-// ============================================
-
-function startAddBookScanner() {
-    try {
-        console.log("=== startAddBookScanner called ===");
-        alert("Starting camera scanner..."); // Debug alert
-
-        const placeholder = document.getElementById('add-book-scan-placeholder');
-        const readerContainer = document.getElementById('add-book-reader-container');
-        const readerElement = document.getElementById('add-book-reader');
-
-        console.log("Elements found:", { placeholder, readerContainer, readerElement });
-
-        if (!placeholder || !readerContainer || !readerElement) {
-            alert("Error: Scanner elements not found!");
-            console.error("Scanner elements not found");
-            showToast("Scanner error - elements not found", "error");
-            return;
-        }
-
-        // Hide placeholder, show reader container
-        placeholder.classList.add('hidden');
-        readerContainer.classList.remove('hidden');
-
-        // Clear any existing content in reader
-        readerElement.innerHTML = '';
-
-        // Check if Html5Qrcode is available
-        if (typeof Html5Qrcode === 'undefined') {
-            alert("Error: Scanner library not loaded!");
-            console.error("Html5Qrcode library not loaded");
-            showToast("Scanner library not loaded", "error");
-            return;
-        }
-
-        // Create new scanner instance each time
-        addBookScanner = new Html5Qrcode("add-book-reader");
-
-        const config = {
-            fps: 10,
-            qrbox: { width: 220, height: 80 },
-            aspectRatio: 1.5
-        };
-
-        addBookScanner.start(
-            { facingMode: "environment" },
-            config,
-            onAddBookScanSuccess,
-            (errorMessage) => {
-                // Ignore scan errors (no barcode in frame)
-            }
-        ).then(() => {
-            console.log("Scanner started successfully");
-            showToast("Camera ready - scan a book barcode", "success");
-        }).catch(err => {
-            console.error("Add book scanner error:", err);
-            alert("Camera error: " + err);
-            showToast("Camera access denied. Please allow camera permission.", "error");
-            stopAddBookScanner();
-        });
-
-    } catch (error) {
-        console.error("startAddBookScanner error:", error);
-        alert("Error: " + error.message);
-        showToast("Scanner error: " + error.message, "error");
-    }
-}
-
-function stopAddBookScanner() {
-    console.log("Stopping Add Book Scanner...");
-
-    const placeholder = document.getElementById('add-book-scan-placeholder');
-    const readerContainer = document.getElementById('add-book-reader-container');
-
-    // Stop scanner if running
-    if (addBookScanner) {
-        try {
-            if (addBookScanner.isScanning) {
-                addBookScanner.stop().then(() => {
-                    console.log("Scanner stopped");
-                    addBookScanner = null;
-                }).catch(err => {
-                    console.log("Stop error:", err);
-                    addBookScanner = null;
-                });
-            } else {
-                addBookScanner = null;
-            }
-        } catch (e) {
-            console.log("Error stopping scanner:", e);
-            addBookScanner = null;
-        }
-    }
-
-    // Show placeholder, hide reader container
-    if (placeholder) placeholder.classList.remove('hidden');
-    if (readerContainer) readerContainer.classList.add('hidden');
-}
-
-async function onAddBookScanSuccess(decodedText, decodedResult) {
-    console.log("Scanned barcode:", decodedText);
-
-    // Vibrate for feedback
-    if (navigator.vibrate) {
-        navigator.vibrate(200);
-    }
-
-    // Stop scanner first
-    stopAddBookScanner();
-
-    // Clean the ISBN (remove any spaces or dashes)
-    const cleanISBN = decodedText.replace(/[-\s]/g, '');
-    console.log("Clean ISBN:", cleanISBN);
-
-    // Set ISBN field
-    const isbnField = document.getElementById('new-isbn');
-    if (isbnField) {
-        isbnField.value = cleanISBN;
-    }
-
-    showToast("ISBN: " + cleanISBN + " - Looking up book...", "");
-
-    // Look up book info with a small delay to ensure UI updates
-    setTimeout(async () => {
-        await lookupAndFillBookInfo(cleanISBN);
-    }, 100);
-}
-
-async function lookupAndFillBookInfo(isbn) {
-    console.log("Looking up ISBN:", isbn);
-
-    // Try Open Library first
-    let bookInfo = await fetchBookFromOpenLibrary(isbn);
-    console.log("Open Library result:", bookInfo);
-
-    // If not found, try Google Books API
-    if (!bookInfo.found) {
-        console.log("Trying Google Books API...");
-        bookInfo = await fetchBookFromGoogleBooks(isbn);
-        console.log("Google Books result:", bookInfo);
-    }
-
-    if (bookInfo.found) {
-        // Fill form fields
-        const titleField = document.getElementById('new-title');
-        const authorField = document.getElementById('new-author');
-
-        if (titleField) titleField.value = bookInfo.title;
-        if (authorField) authorField.value = bookInfo.author;
-
-        // Show preview with cover
-        const preview = document.getElementById('add-book-preview');
-        const coverImg = document.getElementById('add-book-cover');
-        const previewTitle = document.getElementById('preview-title');
-        const previewAuthor = document.getElementById('preview-author');
-
-        if (coverImg) {
-            const coverUrl = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
-            coverImg.src = coverUrl;
-            coverImg.onerror = () => {
-                coverImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120"><rect fill="%23ddd" width="80" height="120"/><text x="40" y="60" text-anchor="middle" fill="%23999" font-size="10">No Cover</text></svg>';
-            };
-        }
-        if (previewTitle) previewTitle.textContent = bookInfo.title;
-        if (previewAuthor) previewAuthor.textContent = bookInfo.author;
-        if (preview) preview.classList.remove('hidden');
-
-        showToast("Found: " + bookInfo.title, "success");
-    } else {
-        showToast("Book not found in database. Enter details manually.", "error");
-    }
-}
-
-// ============================================
-// BOOK LOOKUP (Open Library + Google Books)
-// ============================================
-async function lookupISBN() {
-    const isbn = document.getElementById('new-isbn').value.trim();
-
-    if (!isbn || isbn.length < 10) {
-        showToast("Enter a valid ISBN first", "error");
-        return;
-    }
-
-    showToast("Looking up book info...", "");
-    await lookupAndFillBookInfo(isbn);
-}
-
-async function fetchBookFromGoogleBooks(isbn) {
-    try {
-        const cleanISBN = isbn.replace(/[-\s]/g, '');
-        const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`);
-        const data = await response.json();
-
-        if (data.items && data.items.length > 0) {
-            const book = data.items[0].volumeInfo;
-            return {
-                isbn: isbn,
-                title: book.title || 'Unknown Title',
-                author: book.authors ? book.authors.join(', ') : 'Unknown Author',
-                publisher: book.publisher || '',
-                publishDate: book.publishedDate || '',
-                coverUrl: book.imageLinks ? book.imageLinks.thumbnail : null,
-                found: true
-            };
-        }
-
-        return { isbn: isbn, found: false };
-    } catch (error) {
-        console.error('Google Books API error:', error);
-        return { isbn: isbn, found: false };
-    }
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-function resetScanView() {
-    document.querySelector('.scan-container').classList.remove('hidden');
-    document.getElementById('borrow-form').classList.add('hidden');
-    document.getElementById('return-form').classList.add('hidden');
-
-    // Show placeholder, hide reader (user must click to start)
-    const placeholder = document.getElementById('scanner-placeholder');
-    const reader = document.getElementById('reader');
-    const hint = document.getElementById('scan-hint');
-    const stopBtn = document.getElementById('stop-scan-btn');
-
-    if (placeholder) placeholder.classList.remove('hidden');
-    if (reader) reader.classList.add('hidden');
-    if (hint) hint.classList.add('hidden');
-    if (stopBtn) stopBtn.classList.add('hidden');
-
-    // Hide cover images
-    const covers = document.querySelectorAll('#scanned-cover, #return-cover');
-    covers.forEach(c => c.classList.add('hidden'));
-
-    currentScannedISBN = null;
-    currentBookData = null;
-}
-
 function setDefaultDueDate() {
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + CONFIG.DEFAULT_LOAN_DAYS);
-    document.getElementById('due-date').value = dueDate.toISOString().split('T')[0];
+    const date = new Date();
+    date.setDate(date.getDate() + CONFIG.DEFAULT_LOAN_DAYS);
+    const dueDateInput = document.getElementById('due-date');
+    if (dueDateInput) {
+        dueDateInput.value = date.toISOString().split('T')[0];
+    }
 }
 
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
+    return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
     });
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 function showToast(message, type = '') {
     const toast = document.getElementById('toast');
     toast.textContent = message;
-    toast.className = 'toast';
-    if (type) toast.classList.add(type);
+    toast.className = 'toast' + (type ? ' ' + type : '');
     toast.classList.remove('hidden');
-
-    setTimeout(() => {
-        toast.classList.add('hidden');
-    }, 3000);
-}
-
-// Close modal on outside click
-const addBookModal = document.getElementById('add-book-modal');
-if (addBookModal) {
-    addBookModal.addEventListener('click', (e) => {
-        if (e.target.id === 'add-book-modal') {
-            hideAddBookModal();
-        }
-    });
+    setTimeout(() => toast.classList.add('hidden'), 3000);
 }
