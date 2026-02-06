@@ -715,71 +715,70 @@ function resetAddBookModal() {
 // ADD BOOK SCANNER
 // ============================================
 
-// Initialize Add Book scanner button listener
-document.addEventListener('DOMContentLoaded', () => {
-    const startBtn = document.getElementById('start-add-scan-btn');
-    const stopBtn = document.getElementById('stop-add-scan-btn');
-
-    if (startBtn) {
-        startBtn.addEventListener('click', startAddBookScanner);
-    }
-    if (stopBtn) {
-        stopBtn.addEventListener('click', stopAddBookScanner);
-    }
-});
-
 function startAddBookScanner() {
-    console.log("Starting Add Book Scanner...");
+    try {
+        console.log("=== startAddBookScanner called ===");
+        alert("Starting camera scanner..."); // Debug alert
 
-    const placeholder = document.getElementById('add-book-scan-placeholder');
-    const readerContainer = document.getElementById('add-book-reader-container');
-    const readerElement = document.getElementById('add-book-reader');
+        const placeholder = document.getElementById('add-book-scan-placeholder');
+        const readerContainer = document.getElementById('add-book-reader-container');
+        const readerElement = document.getElementById('add-book-reader');
 
-    if (!placeholder || !readerContainer || !readerElement) {
-        console.error("Scanner elements not found");
-        showToast("Scanner error - elements not found", "error");
-        return;
-    }
+        console.log("Elements found:", { placeholder, readerContainer, readerElement });
 
-    // Hide placeholder, show reader container
-    placeholder.classList.add('hidden');
-    readerContainer.classList.remove('hidden');
-
-    // Clear any existing content in reader
-    readerElement.innerHTML = '';
-
-    // Create new scanner instance each time
-    addBookScanner = new Html5Qrcode("add-book-reader");
-
-    const config = {
-        fps: 10,
-        qrbox: { width: 220, height: 80 },
-        aspectRatio: 1.5,
-        formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39
-        ]
-    };
-
-    addBookScanner.start(
-        { facingMode: "environment" },
-        config,
-        onAddBookScanSuccess,
-        (errorMessage) => {
-            // Ignore scan errors (no barcode in frame)
+        if (!placeholder || !readerContainer || !readerElement) {
+            alert("Error: Scanner elements not found!");
+            console.error("Scanner elements not found");
+            showToast("Scanner error - elements not found", "error");
+            return;
         }
-    ).then(() => {
-        console.log("Scanner started successfully");
-        showToast("Camera ready - scan a book barcode", "success");
-    }).catch(err => {
-        console.error("Add book scanner error:", err);
-        showToast("Camera access denied. Please allow camera permission.", "error");
-        stopAddBookScanner();
-    });
+
+        // Hide placeholder, show reader container
+        placeholder.classList.add('hidden');
+        readerContainer.classList.remove('hidden');
+
+        // Clear any existing content in reader
+        readerElement.innerHTML = '';
+
+        // Check if Html5Qrcode is available
+        if (typeof Html5Qrcode === 'undefined') {
+            alert("Error: Scanner library not loaded!");
+            console.error("Html5Qrcode library not loaded");
+            showToast("Scanner library not loaded", "error");
+            return;
+        }
+
+        // Create new scanner instance each time
+        addBookScanner = new Html5Qrcode("add-book-reader");
+
+        const config = {
+            fps: 10,
+            qrbox: { width: 220, height: 80 },
+            aspectRatio: 1.5
+        };
+
+        addBookScanner.start(
+            { facingMode: "environment" },
+            config,
+            onAddBookScanSuccess,
+            (errorMessage) => {
+                // Ignore scan errors (no barcode in frame)
+            }
+        ).then(() => {
+            console.log("Scanner started successfully");
+            showToast("Camera ready - scan a book barcode", "success");
+        }).catch(err => {
+            console.error("Add book scanner error:", err);
+            alert("Camera error: " + err);
+            showToast("Camera access denied. Please allow camera permission.", "error");
+            stopAddBookScanner();
+        });
+
+    } catch (error) {
+        console.error("startAddBookScanner error:", error);
+        alert("Error: " + error.message);
+        showToast("Scanner error: " + error.message, "error");
+    }
 }
 
 function stopAddBookScanner() {

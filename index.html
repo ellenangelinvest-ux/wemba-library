@@ -117,13 +117,13 @@
                 <div id="add-book-scan-placeholder" class="scan-isbn-placeholder">
                     <div class="scan-icon-large">📷</div>
                     <p>Scan book barcode to auto-fill info</p>
-                    <button type="button" class="btn-scan-large" id="start-add-scan-btn">
+                    <button type="button" class="btn-scan-large" onclick="startAddBookScanner()">
                         Start Camera to Scan ISBN
                     </button>
                 </div>
                 <div id="add-book-reader-container" class="hidden">
                     <div id="add-book-reader"></div>
-                    <button type="button" id="stop-add-scan-btn" class="btn-stop-scan">
+                    <button type="button" class="btn-stop-scan" onclick="stopAddBookScanner()">
                         Stop Camera
                     </button>
                 </div>
