@@ -24,8 +24,14 @@
         <!-- Scan View -->
         <section id="scan-view" class="view">
             <div class="scan-container">
-                <div id="reader"></div>
-                <p class="scan-hint">Point camera at book barcode</p>
+                <div id="scanner-placeholder">
+                    <div class="scanner-icon">📷</div>
+                    <p>Scan a book barcode to check in/out or add new books</p>
+                    <button class="btn-primary" id="start-scan-btn" onclick="startScannerWithPermission()">Start Scanning</button>
+                </div>
+                <div id="reader" class="hidden"></div>
+                <p id="scan-hint" class="scan-hint hidden">Point camera at book barcode</p>
+                <button id="stop-scan-btn" class="btn-secondary hidden" onclick="stopScannerAndReset()">Stop Scanning</button>
             </div>
 
             <!-- Borrow Form (hidden until scan) -->

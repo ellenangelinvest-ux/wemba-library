@@ -104,6 +104,38 @@ main {
     font-size: 0.875rem;
 }
 
+/* Scanner Placeholder */
+#scanner-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    text-align: center;
+}
+
+#scanner-placeholder .scanner-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+#scanner-placeholder p {
+    color: var(--gray-600);
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+}
+
+#scanner-placeholder .btn-primary {
+    flex: none;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+}
+
+#stop-scan-btn {
+    margin: 1rem;
+    flex: none;
+}
+
 /* Forms */
 .form-container {
     background: var(--white);

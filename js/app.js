@@ -72,17 +72,13 @@ function switchView(viewName) {
         // Load data for specific views
         if (viewName === 'books') {
             loadBooks();
-            stopScanner(); // Stop scanner when leaving scan view
+            stopScannerAndReset(); // Stop scanner when leaving scan view
         } else if (viewName === 'overdue') {
             loadOverdue();
-            stopScanner();
+            stopScannerAndReset();
         } else if (viewName === 'scan') {
-            // Initialize scanner only when entering scan view
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
+            // Just show the scan view with start button, don't auto-start camera
             resetScanView();
-            startScanner();
         }
     }
 }
@@ -155,6 +151,36 @@ function getCoverUrl(isbn, size = 'M') {
 // ============================================
 // BARCODE SCANNER
 // ============================================
+
+function startScannerWithPermission() {
+    // Hide placeholder, show reader
+    document.getElementById('scanner-placeholder').classList.add('hidden');
+    document.getElementById('reader').classList.remove('hidden');
+    document.getElementById('scan-hint').classList.remove('hidden');
+    document.getElementById('stop-scan-btn').classList.remove('hidden');
+
+    // Initialize scanner if needed
+    if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("reader");
+    }
+
+    startScanner();
+}
+
+function stopScannerAndReset() {
+    stopScanner();
+
+    // Show placeholder, hide reader
+    const placeholder = document.getElementById('scanner-placeholder');
+    const reader = document.getElementById('reader');
+    const hint = document.getElementById('scan-hint');
+    const stopBtn = document.getElementById('stop-scan-btn');
+
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (reader) reader.classList.add('hidden');
+    if (hint) hint.classList.add('hidden');
+    if (stopBtn) stopBtn.classList.add('hidden');
+}
 
 function startScanner() {
     const config = {
@@ -671,6 +697,17 @@ function resetScanView() {
     document.querySelector('.scan-container').classList.remove('hidden');
     document.getElementById('borrow-form').classList.add('hidden');
     document.getElementById('return-form').classList.add('hidden');
+
+    // Show placeholder, hide reader (user must click to start)
+    const placeholder = document.getElementById('scanner-placeholder');
+    const reader = document.getElementById('reader');
+    const hint = document.getElementById('scan-hint');
+    const stopBtn = document.getElementById('stop-scan-btn');
+
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (reader) reader.classList.add('hidden');
+    if (hint) hint.classList.add('hidden');
+    if (stopBtn) stopBtn.classList.add('hidden');
 
     // Hide cover images
     const covers = document.querySelectorAll('#scanned-cover, #return-cover');
