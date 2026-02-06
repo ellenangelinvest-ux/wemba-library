@@ -110,7 +110,8 @@ function resetScanView() {
 }
 
 async function onScanSuccess(isbn) {
-    console.log("Scanned:", isbn);
+    console.log("=== SCAN SUCCESS ===");
+    console.log("Raw scanned value:", isbn);
 
     if (navigator.vibrate) navigator.vibrate(200);
 
@@ -120,16 +121,42 @@ async function onScanSuccess(isbn) {
     const cleanISBN = isbn.replace(/[^0-9X]/gi, '');
     console.log("Clean ISBN:", cleanISBN);
 
+    if (!cleanISBN) {
+        showToast("Invalid barcode scanned", "error");
+        resetScanView();
+        return;
+    }
+
     currentISBN = cleanISBN;
 
-    showToast("ISBN: " + cleanISBN + " - Looking up...", "");
+    // Show loading state
+    showToast("Scanned: " + cleanISBN, "success");
+
+    // Show step 2 immediately with loading state
+    document.getElementById('scan-step-1').classList.add('hidden');
+    document.getElementById('scan-step-camera').classList.add('hidden');
+    document.getElementById('scan-step-2').classList.remove('hidden');
+
+    // Set ISBN immediately
+    document.getElementById('scanned-book-isbn').textContent = cleanISBN;
+    document.getElementById('scanned-book-title').textContent = 'Looking up...';
+    document.getElementById('scanned-book-author').textContent = 'Please wait...';
+    document.getElementById('scanned-book-status').textContent = '';
+
+    // Hide all action buttons while loading
+    document.getElementById('btn-add-book').classList.add('hidden');
+    document.getElementById('btn-borrow').classList.add('hidden');
+    document.getElementById('btn-return').classList.add('hidden');
 
     // Look up book info
     try {
         await lookupAndDisplayBook(cleanISBN);
     } catch (error) {
         console.error("Lookup error:", error);
-        showToast("Error looking up book: " + error.message, "error");
+        document.getElementById('scanned-book-title').textContent = 'Lookup failed';
+        document.getElementById('scanned-book-author').textContent = 'Enter details manually';
+        document.getElementById('btn-add-book').classList.remove('hidden');
+        showToast("Error: " + error.message, "error");
     }
 }
 
@@ -137,39 +164,43 @@ async function onScanSuccess(isbn) {
 // BOOK LOOKUP
 // ============================================
 async function lookupAndDisplayBook(isbn) {
-    console.log("Looking up book for ISBN:", isbn);
-
-    // First check if book exists in our library
-    let libraryBook = null;
-    try {
-        libraryBook = await checkLibraryStatus(isbn);
-        console.log("Library status:", libraryBook);
-    } catch (e) {
-        console.log("Library check failed:", e);
-    }
+    console.log("=== LOOKING UP BOOK ===");
+    console.log("ISBN:", isbn);
 
     // Get book details from Open Library / Google Books
-    showToast("Searching book databases...", "");
-    let bookInfo = await fetchBookInfo(isbn);
-    console.log("Book info found:", bookInfo);
+    let bookInfo = { title: 'Unknown Title', author: 'Unknown Author', coverUrl: null, found: false };
+
+    try {
+        bookInfo = await fetchBookInfo(isbn);
+        console.log("Book info result:", bookInfo);
+    } catch (e) {
+        console.error("fetchBookInfo error:", e);
+    }
+
     currentBookInfo = bookInfo;
 
     // Display book info
-    document.getElementById('scanned-book-isbn').textContent = isbn;
     document.getElementById('scanned-book-title').textContent = bookInfo.title || 'Unknown Title';
     document.getElementById('scanned-book-author').textContent = bookInfo.author || 'Unknown Author';
 
     // Set cover image
     const coverImg = document.getElementById('scanned-book-cover');
-    if (bookInfo.coverUrl) {
-        coverImg.src = bookInfo.coverUrl;
-    } else {
-        coverImg.src = getCoverUrl(isbn, 'M');
-    }
+    const coverUrl = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
+    coverImg.src = coverUrl;
+    console.log("Cover URL:", coverUrl);
 
     // Pre-fill add form
     document.getElementById('add-title').value = bookInfo.title || '';
     document.getElementById('add-author').value = bookInfo.author || '';
+
+    // Check library status
+    let libraryBook = null;
+    try {
+        libraryBook = await checkLibraryStatus(isbn);
+        console.log("Library status:", libraryBook);
+    } catch (e) {
+        console.log("Library check failed (this is OK for new books):", e);
+    }
 
     // Determine status and show appropriate buttons
     const statusEl = document.getElementById('scanned-book-status');
@@ -177,7 +208,7 @@ async function lookupAndDisplayBook(isbn) {
     const btnBorrow = document.getElementById('btn-borrow');
     const btnReturn = document.getElementById('btn-return');
 
-    if (!libraryBook) {
+    if (!libraryBook || libraryBook.error) {
         // Book not in library
         currentBookStatus = 'new';
         statusEl.textContent = 'Not in library yet';
@@ -196,22 +227,17 @@ async function lookupAndDisplayBook(isbn) {
     } else {
         // Book is borrowed
         currentBookStatus = 'borrowed';
-        statusEl.textContent = `Borrowed by ${libraryBook.currentBorrower || 'someone'}`;
+        statusEl.textContent = 'Borrowed by ' + (libraryBook.currentBorrower || 'someone');
         statusEl.className = 'book-status status-borrowed';
         btnAdd.classList.add('hidden');
         btnBorrow.classList.add('hidden');
         btnReturn.classList.remove('hidden');
     }
 
-    // Show step 2
-    document.getElementById('scan-step-1').classList.add('hidden');
-    document.getElementById('scan-step-camera').classList.add('hidden');
-    document.getElementById('scan-step-2').classList.remove('hidden');
-
     if (bookInfo.found) {
-        showToast("Book found: " + bookInfo.title, "success");
+        showToast("Found: " + bookInfo.title, "success");
     } else {
-        showToast("Book not in database - enter details manually", "");
+        showToast("ISBN: " + isbn + " - Enter details manually", "");
     }
 }
 
