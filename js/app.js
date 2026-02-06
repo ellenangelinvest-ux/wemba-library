@@ -696,76 +696,135 @@ function hideAddBookModal() {
 
 function resetAddBookModal() {
     // Reset form
-    document.getElementById('add-book-form').reset();
+    const form = document.getElementById('add-book-form');
+    if (form) form.reset();
 
     // Hide preview
-    document.getElementById('add-book-preview').classList.add('hidden');
+    const preview = document.getElementById('add-book-preview');
+    if (preview) preview.classList.add('hidden');
 
-    // Show scan placeholder, hide reader
-    document.getElementById('add-book-scan-placeholder').classList.remove('hidden');
-    document.getElementById('add-book-reader').classList.add('hidden');
-    document.getElementById('stop-add-scan-btn').classList.add('hidden');
+    // Show scan placeholder, hide reader container
+    const placeholder = document.getElementById('add-book-scan-placeholder');
+    const readerContainer = document.getElementById('add-book-reader-container');
+
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (readerContainer) readerContainer.classList.add('hidden');
 }
 
 // ============================================
 // ADD BOOK SCANNER
 // ============================================
-function startAddBookScanner() {
-    // Hide placeholder, show reader
-    document.getElementById('add-book-scan-placeholder').classList.add('hidden');
-    document.getElementById('add-book-reader').classList.remove('hidden');
-    document.getElementById('stop-add-scan-btn').classList.remove('hidden');
 
-    // Initialize scanner
-    if (!addBookScanner) {
-        addBookScanner = new Html5Qrcode("add-book-reader");
+// Initialize Add Book scanner button listener
+document.addEventListener('DOMContentLoaded', () => {
+    const startBtn = document.getElementById('start-add-scan-btn');
+    const stopBtn = document.getElementById('stop-add-scan-btn');
+
+    if (startBtn) {
+        startBtn.addEventListener('click', startAddBookScanner);
     }
+    if (stopBtn) {
+        stopBtn.addEventListener('click', stopAddBookScanner);
+    }
+});
+
+function startAddBookScanner() {
+    console.log("Starting Add Book Scanner...");
+
+    const placeholder = document.getElementById('add-book-scan-placeholder');
+    const readerContainer = document.getElementById('add-book-reader-container');
+    const readerElement = document.getElementById('add-book-reader');
+
+    if (!placeholder || !readerContainer || !readerElement) {
+        console.error("Scanner elements not found");
+        showToast("Scanner error - elements not found", "error");
+        return;
+    }
+
+    // Hide placeholder, show reader container
+    placeholder.classList.add('hidden');
+    readerContainer.classList.remove('hidden');
+
+    // Clear any existing content in reader
+    readerElement.innerHTML = '';
+
+    // Create new scanner instance each time
+    addBookScanner = new Html5Qrcode("add-book-reader");
 
     const config = {
         fps: 10,
-        qrbox: { width: 250, height: 100 },
-        aspectRatio: 1.5
+        qrbox: { width: 220, height: 80 },
+        aspectRatio: 1.5,
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39
+        ]
     };
 
     addBookScanner.start(
         { facingMode: "environment" },
         config,
         onAddBookScanSuccess,
-        () => {} // Ignore errors
-    ).catch(err => {
-        console.log("Add book scanner error:", err);
-        showToast("Camera access required", "error");
+        (errorMessage) => {
+            // Ignore scan errors (no barcode in frame)
+        }
+    ).then(() => {
+        console.log("Scanner started successfully");
+        showToast("Camera ready - scan a book barcode", "success");
+    }).catch(err => {
+        console.error("Add book scanner error:", err);
+        showToast("Camera access denied. Please allow camera permission.", "error");
         stopAddBookScanner();
     });
 }
 
 function stopAddBookScanner() {
-    try {
-        if (addBookScanner && addBookScanner.isScanning) {
-            addBookScanner.stop().catch(err => console.log("Stop error:", err));
+    console.log("Stopping Add Book Scanner...");
+
+    const placeholder = document.getElementById('add-book-scan-placeholder');
+    const readerContainer = document.getElementById('add-book-reader-container');
+
+    // Stop scanner if running
+    if (addBookScanner) {
+        try {
+            if (addBookScanner.isScanning) {
+                addBookScanner.stop().then(() => {
+                    console.log("Scanner stopped");
+                    addBookScanner = null;
+                }).catch(err => {
+                    console.log("Stop error:", err);
+                    addBookScanner = null;
+                });
+            } else {
+                addBookScanner = null;
+            }
+        } catch (e) {
+            console.log("Error stopping scanner:", e);
+            addBookScanner = null;
         }
-    } catch (e) {
-        // Ignore
     }
 
-    // Show placeholder, hide reader
-    const placeholder = document.getElementById('add-book-scan-placeholder');
-    const reader = document.getElementById('add-book-reader');
-    const stopBtn = document.getElementById('stop-add-scan-btn');
-
+    // Show placeholder, hide reader container
     if (placeholder) placeholder.classList.remove('hidden');
-    if (reader) reader.classList.add('hidden');
-    if (stopBtn) stopBtn.classList.add('hidden');
+    if (readerContainer) readerContainer.classList.add('hidden');
 }
 
-async function onAddBookScanSuccess(decodedText) {
+async function onAddBookScanSuccess(decodedText, decodedResult) {
+    console.log("Scanned ISBN:", decodedText);
+
     // Vibrate for feedback
     if (navigator.vibrate) {
-        navigator.vibrate(100);
+        navigator.vibrate(200);
     }
 
+    // Stop scanner first
     stopAddBookScanner();
-    showToast("ISBN scanned! Looking up book...", "");
+
+    showToast("ISBN scanned! Looking up book...", "success");
 
     // Set ISBN field
     document.getElementById('new-isbn').value = decodedText;

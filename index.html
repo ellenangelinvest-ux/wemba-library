@@ -115,15 +115,18 @@
             <!-- Scan ISBN Option -->
             <div id="add-book-scan-section">
                 <div id="add-book-scan-placeholder" class="scan-isbn-placeholder">
-                    <p>Scan barcode to auto-fill book info</p>
-                    <button type="button" class="btn-scan" onclick="startAddBookScanner()">
-                        📷 Scan ISBN
+                    <div class="scan-icon-large">📷</div>
+                    <p>Scan book barcode to auto-fill info</p>
+                    <button type="button" class="btn-scan-large" id="start-add-scan-btn">
+                        Start Camera to Scan ISBN
                     </button>
                 </div>
-                <div id="add-book-reader" class="hidden"></div>
-                <button type="button" id="stop-add-scan-btn" class="btn-secondary btn-small hidden" onclick="stopAddBookScanner()">
-                    Stop Scanning
-                </button>
+                <div id="add-book-reader-container" class="hidden">
+                    <div id="add-book-reader"></div>
+                    <button type="button" id="stop-add-scan-btn" class="btn-stop-scan">
+                        Stop Camera
+                    </button>
+                </div>
             </div>
 
             <div class="divider"><span>or enter manually</span></div>
