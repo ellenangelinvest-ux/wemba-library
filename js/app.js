@@ -814,7 +814,7 @@ function stopAddBookScanner() {
 }
 
 async function onAddBookScanSuccess(decodedText, decodedResult) {
-    console.log("Scanned ISBN:", decodedText);
+    console.log("Scanned barcode:", decodedText);
 
     // Vibrate for feedback
     if (navigator.vibrate) {
@@ -824,13 +824,67 @@ async function onAddBookScanSuccess(decodedText, decodedResult) {
     // Stop scanner first
     stopAddBookScanner();
 
-    showToast("ISBN scanned! Looking up book...", "success");
+    // Clean the ISBN (remove any spaces or dashes)
+    const cleanISBN = decodedText.replace(/[-\s]/g, '');
+    console.log("Clean ISBN:", cleanISBN);
 
     // Set ISBN field
-    document.getElementById('new-isbn').value = decodedText;
+    const isbnField = document.getElementById('new-isbn');
+    if (isbnField) {
+        isbnField.value = cleanISBN;
+    }
 
-    // Look up book info
-    await lookupISBN();
+    showToast("ISBN: " + cleanISBN + " - Looking up book...", "");
+
+    // Look up book info with a small delay to ensure UI updates
+    setTimeout(async () => {
+        await lookupAndFillBookInfo(cleanISBN);
+    }, 100);
+}
+
+async function lookupAndFillBookInfo(isbn) {
+    console.log("Looking up ISBN:", isbn);
+
+    // Try Open Library first
+    let bookInfo = await fetchBookFromOpenLibrary(isbn);
+    console.log("Open Library result:", bookInfo);
+
+    // If not found, try Google Books API
+    if (!bookInfo.found) {
+        console.log("Trying Google Books API...");
+        bookInfo = await fetchBookFromGoogleBooks(isbn);
+        console.log("Google Books result:", bookInfo);
+    }
+
+    if (bookInfo.found) {
+        // Fill form fields
+        const titleField = document.getElementById('new-title');
+        const authorField = document.getElementById('new-author');
+
+        if (titleField) titleField.value = bookInfo.title;
+        if (authorField) authorField.value = bookInfo.author;
+
+        // Show preview with cover
+        const preview = document.getElementById('add-book-preview');
+        const coverImg = document.getElementById('add-book-cover');
+        const previewTitle = document.getElementById('preview-title');
+        const previewAuthor = document.getElementById('preview-author');
+
+        if (coverImg) {
+            const coverUrl = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
+            coverImg.src = coverUrl;
+            coverImg.onerror = () => {
+                coverImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120"><rect fill="%23ddd" width="80" height="120"/><text x="40" y="60" text-anchor="middle" fill="%23999" font-size="10">No Cover</text></svg>';
+            };
+        }
+        if (previewTitle) previewTitle.textContent = bookInfo.title;
+        if (previewAuthor) previewAuthor.textContent = bookInfo.author;
+        if (preview) preview.classList.remove('hidden');
+
+        showToast("Found: " + bookInfo.title, "success");
+    } else {
+        showToast("Book not found in database. Enter details manually.", "error");
+    }
 }
 
 // ============================================
@@ -845,38 +899,7 @@ async function lookupISBN() {
     }
 
     showToast("Looking up book info...", "");
-
-    // Try Open Library first
-    let bookInfo = await fetchBookFromOpenLibrary(isbn);
-
-    // If not found, try Google Books API
-    if (!bookInfo.found) {
-        bookInfo = await fetchBookFromGoogleBooks(isbn);
-    }
-
-    if (bookInfo.found) {
-        // Fill form fields
-        document.getElementById('new-title').value = bookInfo.title;
-        document.getElementById('new-author').value = bookInfo.author;
-
-        // Show preview with cover
-        const preview = document.getElementById('add-book-preview');
-        const coverImg = document.getElementById('add-book-cover');
-        const previewTitle = document.getElementById('preview-title');
-        const previewAuthor = document.getElementById('preview-author');
-
-        coverImg.src = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
-        coverImg.onerror = () => {
-            coverImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120"><rect fill="%23ddd" width="80" height="120"/><text x="40" y="60" text-anchor="middle" fill="%23999" font-size="10">No Cover</text></svg>';
-        };
-        previewTitle.textContent = bookInfo.title;
-        previewAuthor.textContent = bookInfo.author;
-        preview.classList.remove('hidden');
-
-        showToast("Book found!", "success");
-    } else {
-        showToast("Book not found. Enter details manually.", "error");
-    }
+    await lookupAndFillBookInfo(isbn);
 }
 
 async function fetchBookFromGoogleBooks(isbn) {
