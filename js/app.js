@@ -115,34 +115,61 @@ async function onScanSuccess(isbn) {
     if (navigator.vibrate) navigator.vibrate(200);
 
     stopScanner();
-    currentISBN = isbn;
 
-    showToast("Looking up book...", "");
+    // Clean ISBN - remove any non-numeric characters except X (for ISBN-10)
+    const cleanISBN = isbn.replace(/[^0-9X]/gi, '');
+    console.log("Clean ISBN:", cleanISBN);
+
+    currentISBN = cleanISBN;
+
+    showToast("ISBN: " + cleanISBN + " - Looking up...", "");
 
     // Look up book info
-    await lookupAndDisplayBook(isbn);
+    try {
+        await lookupAndDisplayBook(cleanISBN);
+    } catch (error) {
+        console.error("Lookup error:", error);
+        showToast("Error looking up book: " + error.message, "error");
+    }
 }
 
 // ============================================
 // BOOK LOOKUP
 // ============================================
 async function lookupAndDisplayBook(isbn) {
+    console.log("Looking up book for ISBN:", isbn);
+
     // First check if book exists in our library
-    let libraryBook = await checkLibraryStatus(isbn);
+    let libraryBook = null;
+    try {
+        libraryBook = await checkLibraryStatus(isbn);
+        console.log("Library status:", libraryBook);
+    } catch (e) {
+        console.log("Library check failed:", e);
+    }
 
     // Get book details from Open Library / Google Books
+    showToast("Searching book databases...", "");
     let bookInfo = await fetchBookInfo(isbn);
+    console.log("Book info found:", bookInfo);
     currentBookInfo = bookInfo;
 
     // Display book info
     document.getElementById('scanned-book-isbn').textContent = isbn;
-    document.getElementById('scanned-book-title').textContent = bookInfo.title;
-    document.getElementById('scanned-book-author').textContent = bookInfo.author;
-    document.getElementById('scanned-book-cover').src = bookInfo.coverUrl || getCoverUrl(isbn, 'M');
+    document.getElementById('scanned-book-title').textContent = bookInfo.title || 'Unknown Title';
+    document.getElementById('scanned-book-author').textContent = bookInfo.author || 'Unknown Author';
+
+    // Set cover image
+    const coverImg = document.getElementById('scanned-book-cover');
+    if (bookInfo.coverUrl) {
+        coverImg.src = bookInfo.coverUrl;
+    } else {
+        coverImg.src = getCoverUrl(isbn, 'M');
+    }
 
     // Pre-fill add form
-    document.getElementById('add-title').value = bookInfo.title;
-    document.getElementById('add-author').value = bookInfo.author;
+    document.getElementById('add-title').value = bookInfo.title || '';
+    document.getElementById('add-author').value = bookInfo.author || '';
 
     // Determine status and show appropriate buttons
     const statusEl = document.getElementById('scanned-book-status');
@@ -153,7 +180,7 @@ async function lookupAndDisplayBook(isbn) {
     if (!libraryBook) {
         // Book not in library
         currentBookStatus = 'new';
-        statusEl.textContent = 'Not in library';
+        statusEl.textContent = 'Not in library yet';
         statusEl.className = 'book-status status-new';
         btnAdd.classList.remove('hidden');
         btnBorrow.classList.add('hidden');
@@ -161,7 +188,7 @@ async function lookupAndDisplayBook(isbn) {
     } else if (libraryBook.status === 'Available') {
         // Book available to borrow
         currentBookStatus = 'available';
-        statusEl.textContent = 'Available';
+        statusEl.textContent = 'Available in library';
         statusEl.className = 'book-status status-available';
         btnAdd.classList.add('hidden');
         btnBorrow.classList.remove('hidden');
@@ -181,49 +208,72 @@ async function lookupAndDisplayBook(isbn) {
     document.getElementById('scan-step-camera').classList.add('hidden');
     document.getElementById('scan-step-2').classList.remove('hidden');
 
-    showToast("Book found!", "success");
+    if (bookInfo.found) {
+        showToast("Book found: " + bookInfo.title, "success");
+    } else {
+        showToast("Book not in database - enter details manually", "");
+    }
 }
 
 async function fetchBookInfo(isbn) {
     const cleanISBN = isbn.replace(/[-\s]/g, '');
+    console.log("Fetching book info for:", cleanISBN);
 
-    // Try Open Library
+    // Try Open Library first
     try {
-        const response = await fetch(`${CONFIG.OPEN_LIBRARY_API}/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`);
+        console.log("Trying Open Library API...");
+        const url = `${CONFIG.OPEN_LIBRARY_API}/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`;
+        console.log("URL:", url);
+
+        const response = await fetch(url);
         const data = await response.json();
+        console.log("Open Library response:", data);
+
         const key = `ISBN:${cleanISBN}`;
 
         if (data[key]) {
             const book = data[key];
+            console.log("Found in Open Library:", book.title);
             return {
                 title: book.title || 'Unknown Title',
                 author: book.authors ? book.authors.map(a => a.name).join(', ') : 'Unknown Author',
                 coverUrl: book.cover ? book.cover.medium : null,
                 found: true
             };
+        } else {
+            console.log("Not found in Open Library");
         }
     } catch (e) {
-        console.log("Open Library error:", e);
+        console.error("Open Library error:", e);
     }
 
-    // Try Google Books
+    // Try Google Books as fallback
     try {
-        const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`);
+        console.log("Trying Google Books API...");
+        const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`;
+        console.log("URL:", url);
+
+        const response = await fetch(url);
         const data = await response.json();
+        console.log("Google Books response:", data);
 
         if (data.items && data.items.length > 0) {
             const book = data.items[0].volumeInfo;
+            console.log("Found in Google Books:", book.title);
             return {
                 title: book.title || 'Unknown Title',
                 author: book.authors ? book.authors.join(', ') : 'Unknown Author',
-                coverUrl: book.imageLinks ? book.imageLinks.thumbnail : null,
+                coverUrl: book.imageLinks ? book.imageLinks.thumbnail.replace('http:', 'https:') : null,
                 found: true
             };
+        } else {
+            console.log("Not found in Google Books");
         }
     } catch (e) {
-        console.log("Google Books error:", e);
+        console.error("Google Books error:", e);
     }
 
+    console.log("Book not found in any database");
     return { title: 'Unknown Title', author: 'Unknown Author', coverUrl: null, found: false };
 }
 
