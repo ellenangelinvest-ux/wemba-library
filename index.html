@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a365d">
+    <meta name="description" content="WEMBA SF Library Book Tracker">
+    <title>WEMBA SF Library</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <h1>WEMBA SF Library</h1>
+        <nav>
+            <button class="nav-btn active" data-view="scan">Scan</button>
+            <button class="nav-btn" data-view="books">Books</button>
+            <button class="nav-btn" data-view="overdue">Overdue</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Scan View -->
+        <section id="scan-view" class="view active">
+            <div class="scan-container">
+                <div id="reader"></div>
+                <p class="scan-hint">Point camera at book barcode</p>
+            </div>
+
+            <!-- Borrow Form (hidden until scan) -->
+            <div id="borrow-form" class="form-container hidden">
+                <h2>Borrow Book</h2>
+                <div class="book-info-with-cover">
+                    <img id="scanned-cover" class="book-cover-preview hidden" alt="Book cover">
+                    <div class="book-info-text">
+                        <p class="book-title" id="scanned-title">Loading...</p>
+                        <p class="book-author" id="scanned-author"></p>
+                        <p class="book-isbn">ISBN: <span id="scanned-isbn"></span></p>
+                    </div>
+                </div>
+                <form id="checkout-form">
+                    <div class="form-group">
+                        <label for="borrower-name">Your Name</label>
+                        <input type="text" id="borrower-name" required placeholder="Enter your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="whatsapp">WhatsApp Number</label>
+                        <input type="tel" id="whatsapp" required placeholder="+1 555 123 4567">
+                    </div>
+                    <div class="form-group">
+                        <label for="due-date">Due Date</label>
+                        <input type="date" id="due-date" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="cancelBorrow()">Cancel</button>
+                        <button type="submit" class="btn-primary">Confirm Borrow</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Return Confirmation (hidden until scan) -->
+            <div id="return-form" class="form-container hidden">
+                <h2>Return Book</h2>
+                <div class="book-info-with-cover">
+                    <img id="return-cover" class="book-cover-preview hidden" alt="Book cover">
+                    <div class="book-info-text">
+                        <p class="book-title" id="return-title"></p>
+                        <p class="book-isbn">ISBN: <span id="return-isbn"></span></p>
+                        <p><strong>Borrower:</strong> <span id="return-borrower"></span></p>
+                        <p><strong>Borrowed:</strong> <span id="return-borrow-date"></span></p>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="cancelReturn()">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="confirmReturn()">Confirm Return</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Books View -->
+        <section id="books-view" class="view">
+            <div class="view-header">
+                <h2>Book Inventory</h2>
+                <button class="btn-small" onclick="showAddBookModal()">+ Add Book</button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="book-search" placeholder="Search books...">
+            </div>
+            <div id="books-list" class="list-container">
+                <p class="loading">Loading books...</p>
+            </div>
+        </section>
+
+        <!-- Overdue View -->
+        <section id="overdue-view" class="view">
+            <h2>Overdue Books</h2>
+            <div id="overdue-list" class="list-container">
+                <p class="loading">Loading...</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Add Book Modal -->
+    <div id="add-book-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add New Book</h2>
+            <form id="add-book-form">
+                <div class="form-group">
+                    <label for="new-isbn">ISBN (Barcode)</label>
+                    <input type="text" id="new-isbn" required placeholder="978-0-123456-78-9">
+                </div>
+                <div class="form-group">
+                    <label for="new-title">Title</label>
+                    <input type="text" id="new-title" required placeholder="Book title">
+                </div>
+                <div class="form-group">
+                    <label for="new-author">Author</label>
+                    <input type="text" id="new-author" required placeholder="Author name">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="hideAddBookModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Book</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
