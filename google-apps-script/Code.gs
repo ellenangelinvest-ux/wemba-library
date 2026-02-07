@@ -29,6 +29,16 @@ function doGet(e) {
       case 'getOverdue':
         result = getOverdueBooks();
         break;
+      // Also handle write actions via GET to avoid CORS issues
+      case 'addBook':
+        result = addBook(e.parameter);
+        break;
+      case 'borrow':
+        result = borrowBook(e.parameter);
+        break;
+      case 'return':
+        result = returnBook(e.parameter);
+        break;
       default:
         result = { error: 'Unknown action' };
     }

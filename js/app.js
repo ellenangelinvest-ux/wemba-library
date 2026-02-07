@@ -329,25 +329,30 @@ function showActions(libraryStatus) {
 async function callAPI(data) {
     console.log("Calling API with:", data);
 
-    try {
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
+    // Use GET with parameters to avoid CORS preflight issues
+    const params = new URLSearchParams();
+    for (const key in data) {
+        params.append(key, typeof data[key] === 'object' ? JSON.stringify(data[key]) : data[key]);
+    }
 
+    const url = `${CONFIG.API_URL}?${params.toString()}`;
+    console.log("API URL:", url);
+
+    try {
+        const response = await fetch(url);
         console.log("Response status:", response.status);
+
         const text = await response.text();
         console.log("Response text:", text);
 
-        // Try to parse as JSON
         try {
             return JSON.parse(text);
         } catch (e) {
-            console.log("Could not parse as JSON, checking for success indicators");
+            console.log("Could not parse as JSON");
             if (text.toLowerCase().includes('success')) {
                 return { success: true };
             }
-            return { success: false, error: 'Unexpected response' };
+            return { success: false, error: 'Unexpected response from server' };
         }
     } catch (e) {
         console.error("Fetch error:", e);
