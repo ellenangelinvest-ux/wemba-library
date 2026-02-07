@@ -4,8 +4,7 @@
 // CONFIGURATION
 // ============================================
 const CONFIG = {
-    API_URL: 'https://script.google.com/macros/s/AKfycbx72uEUC6oyXgiJbp8kDbLt4b5I67mlq_CsCqNE8ralzUJDgwMKlz_maJqcIwXpdbwc/exec',
-    DEFAULT_LOAN_DAYS: 14
+    API_URL: 'https://script.google.com/macros/s/AKfycbx72uEUC6oyXgiJbp8kDbLt4b5I67mlq_CsCqNE8ralzUJDgwMKlz_maJqcIwXpdbwc/exec'
 };
 
 // ============================================
@@ -28,7 +27,6 @@ let currentBook = {
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     loadLibraryBooks();
-    setDefaultDueDate();
 });
 
 // ============================================
@@ -421,7 +419,6 @@ async function submitAddBook() {
 async function submitBorrow() {
     const name = document.getElementById('borrower-name').value.trim();
     const phone = document.getElementById('borrower-phone').value.trim();
-    const dueDate = document.getElementById('due-date').value;
 
     if (!name || !phone) {
         showToast("Please enter name and phone number", "error");
@@ -437,14 +434,14 @@ async function submitBorrow() {
             title: currentBook.title,
             author: currentBook.author,
             borrowerName: name,
-            whatsapp: phone,
-            dueDate: dueDate
+            whatsapp: phone
         });
 
         if (result.success) {
             showToast("Book borrowed successfully!", "success");
             document.getElementById('borrower-name').value = '';
             document.getElementById('borrower-phone').value = '';
+            document.getElementById('form-borrow').classList.add('hidden');
             setTimeout(showScanStart, 1500);
         } else {
             showToast(result.error || "Failed to borrow", "error");
@@ -589,14 +586,6 @@ function sendWhatsAppReminder(phone, title, days) {
 // ============================================
 // UTILITIES
 // ============================================
-function setDefaultDueDate() {
-    const date = new Date();
-    date.setDate(date.getDate() + CONFIG.DEFAULT_LOAN_DAYS);
-    const input = document.getElementById('due-date');
-    if (input) {
-        input.value = date.toISOString().split('T')[0];
-    }
-}
 
 function formatDate(dateString) {
     if (!dateString) return 'N/A';

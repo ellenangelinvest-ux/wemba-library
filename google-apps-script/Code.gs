@@ -2,8 +2,8 @@
  * WEMBA SF Library Tracker - Google Apps Script Backend
  *
  * SHEETS STRUCTURE:
- * Books: ISBN | Title | Author | Status | Donor | Date Added | Current Borrower | Borrow Date | Due Date
- * Transactions: ISBN | Title | Action | Name | Phone | Date | Notes
+ * Books: ISBN | Title | Author | Status | Current Borrower | Borrow Date
+ * Transactions: ISBN | Title | Action | Name | Phone | Date
  */
 
 const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // Replace with your ID
@@ -15,13 +15,19 @@ const TRANSACTIONS_SHEET = 'Transactions';
 // ============================================
 
 function doGet(e) {
-  const action = e.parameter.action;
+  if (!e || !e.parameter) {
+    return ContentService.createTextOutput(JSON.stringify({ error: 'No parameters provided' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const params = e.parameter;
+  const action = params.action;
   let result;
 
   try {
     switch (action) {
       case 'getBook':
-        result = getBook(e.parameter.isbn);
+        result = getBook(params.isbn);
         break;
       case 'getBooks':
         result = getAllBooks();
@@ -29,18 +35,17 @@ function doGet(e) {
       case 'getOverdue':
         result = getOverdueBooks();
         break;
-      // Also handle write actions via GET to avoid CORS issues
       case 'addBook':
-        result = addBook(e.parameter);
+        result = addBook(params);
         break;
       case 'borrow':
-        result = borrowBook(e.parameter);
+        result = borrowBook(params);
         break;
       case 'return':
-        result = returnBook(e.parameter);
+        result = returnBook(params);
         break;
       default:
-        result = { error: 'Unknown action' };
+        result = { error: 'Unknown action: ' + action };
     }
   } catch (error) {
     result = { error: error.message };
@@ -82,23 +87,22 @@ function doPost(e) {
 // BOOK OPERATIONS
 // ============================================
 
+// Get single book by ISBN
 function getBook(isbn) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BOOKS_SHEET);
   const data = sheet.getDataRange().getValues();
 
+  // Columns: ISBN | Title | Author | Status | Current Borrower | Borrow Date
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === isbn) {
+    if (String(data[i][0]) === String(isbn)) {
       return {
         isbn: data[i][0],
         title: data[i][1],
         author: data[i][2],
         status: data[i][3] || 'Available',
-        donor: data[i][4],
-        dateAdded: data[i][5],
-        currentBorrower: data[i][6],
-        borrowDate: data[i][7],
-        dueDate: data[i][8]
+        currentBorrower: data[i][4] || '',
+        borrowDate: data[i][5] || ''
       };
     }
   }
@@ -106,6 +110,7 @@ function getBook(isbn) {
   return { error: 'Book not found' };
 }
 
+// Get all books
 function getAllBooks() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BOOKS_SHEET);
@@ -119,11 +124,8 @@ function getAllBooks() {
         title: data[i][1],
         author: data[i][2],
         status: data[i][3] || 'Available',
-        donor: data[i][4],
-        dateAdded: data[i][5],
-        currentBorrower: data[i][6],
-        borrowDate: data[i][7],
-        dueDate: data[i][8]
+        currentBorrower: data[i][4] || '',
+        borrowDate: data[i][5] || ''
       });
     }
   }
@@ -131,6 +133,7 @@ function getAllBooks() {
   return { books: books };
 }
 
+// Add new book to library
 function addBook(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BOOKS_SHEET);
@@ -142,32 +145,27 @@ function addBook(data) {
     return { error: 'Book already exists in library' };
   }
 
-  const now = new Date().toISOString();
+  const now = new Date().toLocaleDateString();
 
   // Add to Books sheet
-  // ISBN | Title | Author | Status | Donor | Date Added | Current Borrower | Borrow Date | Due Date
+  // ISBN | Title | Author | Status | Current Borrower | Borrow Date
   sheet.appendRow([
     data.isbn,
     data.title,
     data.author,
     'Available',
-    data.donor || '',
-    data.dateAdded || now,
-    '', // Current Borrower
-    '', // Borrow Date
-    ''  // Due Date
+    '',  // Current Borrower
+    ''   // Borrow Date
   ]);
 
   // Log transaction
-  // ISBN | Title | Action | Name | Phone | Date | Notes
   transSheet.appendRow([
     data.isbn,
     data.title,
     'Added to Library',
-    data.donor || 'Unknown',
     '',
-    now,
-    data.donor ? 'Donated by ' + data.donor : 'Added to collection'
+    '',
+    now
   ]);
 
   return { success: true, message: 'Book added to library' };
@@ -177,18 +175,19 @@ function addBook(data) {
 // BORROW / RETURN
 // ============================================
 
+// Borrow a book
 function borrowBook(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BOOKS_SHEET);
   const transSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   const booksData = sheet.getDataRange().getValues();
 
-  const now = new Date().toISOString();
+  const now = new Date().toLocaleDateString();
 
   // Find book row
   let bookRow = -1;
   for (let i = 1; i < booksData.length; i++) {
-    if (booksData[i][0] === data.isbn) {
+    if (String(booksData[i][0]) === String(data.isbn)) {
       bookRow = i + 1;
       break;
     }
@@ -201,58 +200,53 @@ function borrowBook(data) {
       data.title || 'Unknown',
       data.author || 'Unknown',
       'Borrowed',
-      '',
-      now,
       data.borrowerName,
-      data.borrowDate || now,
-      data.dueDate
+      now
     ]);
 
     transSheet.appendRow([
       data.isbn,
       data.title || 'Unknown',
-      'Checked Out',
+      'Borrowed',
       data.borrowerName,
-      data.whatsapp,
-      now,
-      'Due: ' + data.dueDate
+      data.whatsapp || '',
+      now
     ]);
 
-    return { success: true, message: 'Book added and checked out' };
+    return { success: true, message: 'Book added and borrowed' };
   }
 
   // Check if available
   if (booksData[bookRow - 1][3] === 'Borrowed') {
-    return { error: 'Book is already checked out' };
+    return { error: 'Book is already borrowed by ' + booksData[bookRow - 1][4] };
   }
 
   // Update book status
-  sheet.getRange(bookRow, 4).setValue('Borrowed');      // Status
-  sheet.getRange(bookRow, 7).setValue(data.borrowerName); // Current Borrower
-  sheet.getRange(bookRow, 8).setValue(data.borrowDate || now); // Borrow Date
-  sheet.getRange(bookRow, 9).setValue(data.dueDate);    // Due Date
+  sheet.getRange(bookRow, 4).setValue('Borrowed');        // Status
+  sheet.getRange(bookRow, 5).setValue(data.borrowerName); // Current Borrower
+  sheet.getRange(bookRow, 6).setValue(now);               // Borrow Date
 
   // Log transaction
   transSheet.appendRow([
     data.isbn,
     booksData[bookRow - 1][1], // Title
-    'Checked Out',
+    'Borrowed',
     data.borrowerName,
-    data.whatsapp,
-    now,
-    'Due: ' + data.dueDate
+    data.whatsapp || '',
+    now
   ]);
 
-  return { success: true, message: 'Book checked out successfully' };
+  return { success: true, message: 'Book borrowed successfully' };
 }
 
+// Return a book
 function returnBook(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BOOKS_SHEET);
   const transSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   const booksData = sheet.getDataRange().getValues();
 
-  const now = new Date().toISOString();
+  const now = new Date().toLocaleDateString();
 
   // Find book row
   let bookRow = -1;
@@ -260,10 +254,10 @@ function returnBook(data) {
   let borrowerName = '';
 
   for (let i = 1; i < booksData.length; i++) {
-    if (booksData[i][0] === data.isbn) {
+    if (String(booksData[i][0]) === String(data.isbn)) {
       bookRow = i + 1;
       bookTitle = booksData[i][1];
-      borrowerName = booksData[i][6];
+      borrowerName = booksData[i][4];
       break;
     }
   }
@@ -274,76 +268,63 @@ function returnBook(data) {
 
   // Update book status - clear borrower info
   sheet.getRange(bookRow, 4).setValue('Available');  // Status
-  sheet.getRange(bookRow, 7).setValue('');           // Current Borrower
-  sheet.getRange(bookRow, 8).setValue('');           // Borrow Date
-  sheet.getRange(bookRow, 9).setValue('');           // Due Date
+  sheet.getRange(bookRow, 5).setValue('');           // Current Borrower
+  sheet.getRange(bookRow, 6).setValue('');           // Borrow Date
 
-  // Log transaction
+  // Log transaction with return date
   transSheet.appendRow([
     data.isbn,
     bookTitle,
     'Returned',
     borrowerName || 'Unknown',
     '',
-    now,
-    'Returned on ' + new Date().toLocaleDateString()
+    now  // Return Date
   ]);
 
   return { success: true, message: 'Book returned successfully' };
 }
 
 // ============================================
-// OVERDUE
+// OVERDUE - Get borrowed books
 // ============================================
 
 function getOverdueBooks() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const transSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   const booksSheet = ss.getSheetByName(BOOKS_SHEET);
   const booksData = booksSheet.getDataRange().getValues();
+  const transSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
+  const transData = transSheet.getDataRange().getValues();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const overdue = [];
+  const borrowed = [];
 
   for (let i = 1; i < booksData.length; i++) {
-    if (booksData[i][3] === 'Borrowed' && booksData[i][8]) {
-      const dueDate = new Date(booksData[i][8]);
-      dueDate.setHours(0, 0, 0, 0);
+    if (booksData[i][3] === 'Borrowed') {
+      const isbn = booksData[i][0];
 
-      if (dueDate < today) {
-        const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-        overdue.push({
-          isbn: booksData[i][0],
-          title: booksData[i][1],
-          borrowerName: booksData[i][6],
-          whatsapp: '', // Need to get from transactions
-          dueDate: booksData[i][8],
-          daysOverdue: daysOverdue
-        });
+      // Find phone number from transactions
+      let whatsapp = '';
+      for (let j = transData.length - 1; j >= 1; j--) {
+        if (String(transData[j][0]) === String(isbn) && transData[j][2] === 'Borrowed') {
+          whatsapp = transData[j][4];
+          break;
+        }
       }
+
+      borrowed.push({
+        isbn: isbn,
+        title: booksData[i][1],
+        borrowerName: booksData[i][4],
+        borrowDate: booksData[i][5],
+        whatsapp: whatsapp
+      });
     }
   }
 
-  // Get phone numbers from transactions
-  const transData = transSheet.getDataRange().getValues();
-  for (let o of overdue) {
-    for (let i = transData.length - 1; i >= 1; i--) {
-      if (transData[i][0] === o.isbn && transData[i][2] === 'Checked Out') {
-        o.whatsapp = transData[i][4];
-        break;
-      }
-    }
-  }
-
-  overdue.sort((a, b) => b.daysOverdue - a.daysOverdue);
-
-  return { overdue: overdue };
+  return { overdue: borrowed };
 }
 
 // ============================================
-// SETUP - Run once
+// SETUP - Run once to create sheets
 // ============================================
 
 function setupSheets() {
@@ -353,24 +334,25 @@ function setupSheets() {
   let booksSheet = ss.getSheetByName(BOOKS_SHEET);
   if (!booksSheet) {
     booksSheet = ss.insertSheet(BOOKS_SHEET);
-    booksSheet.appendRow([
-      'ISBN', 'Title', 'Author', 'Status', 'Donor',
-      'Date Added', 'Current Borrower', 'Borrow Date', 'Due Date'
-    ]);
-    booksSheet.getRange(1, 1, 1, 9).setFontWeight('bold');
-    booksSheet.setFrozenRows(1);
   }
+  // Set headers
+  booksSheet.getRange(1, 1, 1, 6).setValues([[
+    'ISBN', 'Title', 'Author', 'Status', 'Current Borrower', 'Borrow Date'
+  ]]);
+  booksSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  booksSheet.setFrozenRows(1);
 
   // Transactions sheet
   let transSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   if (!transSheet) {
     transSheet = ss.insertSheet(TRANSACTIONS_SHEET);
-    transSheet.appendRow([
-      'ISBN', 'Title', 'Action', 'Name', 'Phone', 'Date', 'Notes'
-    ]);
-    transSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
-    transSheet.setFrozenRows(1);
   }
+  // Set headers
+  transSheet.getRange(1, 1, 1, 6).setValues([[
+    'ISBN', 'Title', 'Action', 'Name', 'Phone', 'Date'
+  ]]);
+  transSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  transSheet.setFrozenRows(1);
 
   Logger.log('Sheets setup complete!');
 }
