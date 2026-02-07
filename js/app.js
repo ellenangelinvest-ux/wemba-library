@@ -324,6 +324,28 @@ function showActions(libraryStatus) {
 }
 
 // ============================================
+// API HELPER - Handle Google Apps Script CORS
+// ============================================
+async function callAPI(data) {
+    // Google Apps Script requires special handling for CORS
+    // Use POST with text/plain to avoid preflight
+    const response = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+            'Content-Type': 'text/plain',
+        },
+        body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+        throw new Error('Network response was not ok');
+    }
+
+    return await response.json();
+}
+
+// ============================================
 // STEP 6: ACTION HANDLERS
 // ============================================
 
@@ -353,19 +375,13 @@ async function submitAddBook() {
     showToast("Adding to library...", "");
 
     try {
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'addBook',
-                isbn: currentBook.isbn,
-                title: title,
-                author: author,
-                donor: donor
-            })
+        const result = await callAPI({
+            action: 'addBook',
+            isbn: currentBook.isbn,
+            title: title,
+            author: author,
+            donor: donor
         });
-
-        const result = await response.json();
 
         if (result.success) {
             showToast("Book added to library!", "success");
@@ -376,11 +392,13 @@ async function submitAddBook() {
             document.getElementById('result-status').className = 'result-status status-available';
             hideAllActions();
             document.getElementById('action-borrow').classList.remove('hidden');
+            document.getElementById('form-add').classList.add('hidden');
         } else {
             showToast(result.error || "Failed to add book", "error");
         }
     } catch (e) {
-        showToast("Connection error", "error");
+        console.error("Add book error:", e);
+        showToast("Error: " + e.message, "error");
     }
 }
 
@@ -398,21 +416,15 @@ async function submitBorrow() {
     showToast("Processing...", "");
 
     try {
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'borrow',
-                isbn: currentBook.isbn,
-                title: currentBook.title,
-                author: currentBook.author,
-                borrowerName: name,
-                whatsapp: phone,
-                dueDate: dueDate
-            })
+        const result = await callAPI({
+            action: 'borrow',
+            isbn: currentBook.isbn,
+            title: currentBook.title,
+            author: currentBook.author,
+            borrowerName: name,
+            whatsapp: phone,
+            dueDate: dueDate
         });
-
-        const result = await response.json();
 
         if (result.success) {
             showToast("Book borrowed successfully!", "success");
@@ -423,7 +435,8 @@ async function submitBorrow() {
             showToast(result.error || "Failed to borrow", "error");
         }
     } catch (e) {
-        showToast("Connection error", "error");
+        console.error("Borrow error:", e);
+        showToast("Error: " + e.message, "error");
     }
 }
 
@@ -432,16 +445,10 @@ async function submitReturn() {
     showToast("Processing return...", "");
 
     try {
-        const response = await fetch(CONFIG.API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'return',
-                isbn: currentBook.isbn
-            })
+        const result = await callAPI({
+            action: 'return',
+            isbn: currentBook.isbn
         });
-
-        const result = await response.json();
 
         if (result.success) {
             showToast("Book returned successfully!", "success");
@@ -450,7 +457,8 @@ async function submitReturn() {
             showToast(result.error || "Failed to return", "error");
         }
     } catch (e) {
-        showToast("Connection error", "error");
+        console.error("Return error:", e);
+        showToast("Error: " + e.message, "error");
     }
 }
 
