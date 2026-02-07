@@ -74,28 +74,34 @@ function startScanner() {
     document.getElementById('scan-step-camera').classList.remove('hidden');
     document.getElementById('scan-step-2').classList.add('hidden');
 
+    // Create scanner with barcode formats (ISBN barcodes are EAN-13)
     if (!scanner) {
-        scanner = new Html5Qrcode("scanner-reader");
+        try {
+            scanner = new Html5Qrcode("scanner-reader", {
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E
+                ]
+            });
+        } catch (e) {
+            // Fallback if formats not supported
+            console.log("Using default scanner formats");
+            scanner = new Html5Qrcode("scanner-reader");
+        }
     }
 
-    // Configure for barcode scanning (ISBN barcodes are EAN-13)
     const config = {
         fps: 10,
-        qrbox: { width: 280, height: 120 }, // Wider box for barcodes
-        formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,   // ISBN-13 barcodes
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.CODE_128
-        ]
+        qrbox: { width: 280, height: 120 }
     };
 
     scanner.start(
         { facingMode: "environment" },
         config,
         onScanSuccess,
-        () => {} // Ignore errors silently
+        () => {} // Ignore scan errors silently
     ).then(() => {
         showToast("Point camera at book barcode", "success");
     }).catch(err => {
@@ -127,22 +133,22 @@ function resetScanView() {
     isProcessingScan = false; // Reset the lock
 }
 
-// Validate ISBN format (ISBN-10 or ISBN-13)
+// Validate barcode format (ISBN-10, ISBN-13, or other EAN barcodes)
 function isValidISBN(code) {
     if (!code) return false;
 
-    // ISBN-13: exactly 13 digits, typically starts with 978 or 979
+    // Accept any 13-digit number (EAN-13 format, includes ISBN-13)
     if (code.length === 13 && /^\d{13}$/.test(code)) {
-        // Most book ISBNs start with 978 or 979
-        if (code.startsWith('978') || code.startsWith('979')) {
-            return true;
-        }
-        // Could be other EAN-13 barcode, still accept it
         return true;
     }
 
-    // ISBN-10: exactly 10 characters, last can be X
+    // Accept any 10-digit code (ISBN-10, last character can be X)
     if (code.length === 10 && /^\d{9}[\dX]$/.test(code)) {
+        return true;
+    }
+
+    // Accept 12-digit UPC codes
+    if (code.length === 12 && /^\d{12}$/.test(code)) {
         return true;
     }
 
@@ -334,36 +340,24 @@ async function fetchBookInfo(isbn) {
     console.log("=== FETCHING BOOK INFO ===");
     console.log("ISBN:", cleanISBN);
 
-    // Try BOTH APIs in parallel for speed
-    const googlePromise = fetchFromGoogleBooks(cleanISBN);
-    const openLibPromise = fetchFromOpenLibrary(cleanISBN);
-
-    // Race: return first successful result
+    // Try Google Books first (usually faster and more reliable)
     try {
-        const result = await Promise.any([googlePromise, openLibPromise]);
+        const result = await fetchFromGoogleBooks(cleanISBN);
         if (result && result.found) {
-            console.log("SUCCESS - Found book:", result.title);
+            console.log("SUCCESS - Found in Google Books:", result.title);
             return result;
         }
-    } catch (e) {
-        console.log("All APIs failed or returned no results");
-    }
-
-    // If race failed, try sequentially with more patience
-    console.log("Trying APIs sequentially...");
-
-    // Try Google Books
-    try {
-        const result = await googlePromise;
-        if (result && result.found) return result;
     } catch (e) {
         console.log("Google Books failed:", e.message);
     }
 
-    // Try Open Library
+    // Try Open Library as fallback
     try {
-        const result = await openLibPromise;
-        if (result && result.found) return result;
+        const result = await fetchFromOpenLibrary(cleanISBN);
+        if (result && result.found) {
+            console.log("SUCCESS - Found in Open Library:", result.title);
+            return result;
+        }
     } catch (e) {
         console.log("Open Library failed:", e.message);
     }
