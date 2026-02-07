@@ -17,6 +17,7 @@ let currentISBN = null;
 let currentBookInfo = null;
 let currentBookStatus = null; // 'new', 'available', 'borrowed'
 let booksCache = [];
+let isProcessingScan = false; // Prevent multiple scan callbacks
 
 // ============================================
 // INITIALIZATION
@@ -66,6 +67,9 @@ function switchView(viewName) {
 function startScanner() {
     console.log("Starting scanner...");
 
+    // Reset processing flag when starting new scan
+    isProcessingScan = false;
+
     document.getElementById('scan-step-1').classList.add('hidden');
     document.getElementById('scan-step-camera').classList.remove('hidden');
     document.getElementById('scan-step-2').classList.add('hidden');
@@ -74,13 +78,26 @@ function startScanner() {
         scanner = new Html5Qrcode("scanner-reader");
     }
 
+    // Configure for barcode scanning (ISBN barcodes are EAN-13)
+    const config = {
+        fps: 10,
+        qrbox: { width: 280, height: 120 }, // Wider box for barcodes
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,   // ISBN-13 barcodes
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128
+        ]
+    };
+
     scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 100 } },
+        config,
         onScanSuccess,
-        () => {} // Ignore errors
+        () => {} // Ignore errors silently
     ).then(() => {
-        showToast("Camera ready - scan barcode", "success");
+        showToast("Point camera at book barcode", "success");
     }).catch(err => {
         console.error("Scanner error:", err);
         showToast("Camera access denied", "error");
@@ -107,25 +124,60 @@ function resetScanView() {
     currentISBN = null;
     currentBookInfo = null;
     currentBookStatus = null;
+    isProcessingScan = false; // Reset the lock
 }
 
-async function onScanSuccess(isbn) {
+// Validate ISBN format (ISBN-10 or ISBN-13)
+function isValidISBN(code) {
+    if (!code) return false;
+
+    // ISBN-13: exactly 13 digits, typically starts with 978 or 979
+    if (code.length === 13 && /^\d{13}$/.test(code)) {
+        // Most book ISBNs start with 978 or 979
+        if (code.startsWith('978') || code.startsWith('979')) {
+            return true;
+        }
+        // Could be other EAN-13 barcode, still accept it
+        return true;
+    }
+
+    // ISBN-10: exactly 10 characters, last can be X
+    if (code.length === 10 && /^\d{9}[\dX]$/.test(code)) {
+        return true;
+    }
+
+    return false;
+}
+
+async function onScanSuccess(scannedValue) {
+    // Prevent multiple callbacks from processing
+    if (isProcessingScan) {
+        console.log("Already processing a scan, ignoring...");
+        return;
+    }
+
     console.log("=== SCAN SUCCESS ===");
-    console.log("Raw scanned value:", isbn);
+    console.log("Raw scanned value:", scannedValue);
+
+    // Clean the scanned value - remove any non-numeric characters except X (for ISBN-10)
+    const cleanISBN = scannedValue.replace(/[^0-9X]/gi, '').toUpperCase();
+    console.log("Clean ISBN:", cleanISBN);
+
+    // Validate ISBN format: must be exactly 10 or 13 digits
+    // ISBN-13 starts with 978 or 979
+    // ISBN-10 is 10 characters (last can be X)
+    if (!isValidISBN(cleanISBN)) {
+        console.log("Invalid ISBN format, ignoring:", cleanISBN);
+        // Don't reset - keep scanning for a valid barcode
+        return;
+    }
+
+    // Lock to prevent duplicate processing
+    isProcessingScan = true;
 
     if (navigator.vibrate) navigator.vibrate(200);
 
     stopScanner();
-
-    // Clean ISBN - remove any non-numeric characters except X (for ISBN-10)
-    const cleanISBN = isbn.replace(/[^0-9X]/gi, '');
-    console.log("Clean ISBN:", cleanISBN);
-
-    if (!cleanISBN) {
-        showToast("Invalid barcode scanned", "error");
-        resetScanView();
-        return;
-    }
 
     currentISBN = cleanISBN;
 
