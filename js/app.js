@@ -65,39 +65,62 @@ function switchView(viewName) {
 // ============================================
 // STEP 1: SCANNER
 // ============================================
+let isScanning = false;
+
 function showScanStart() {
     document.getElementById('scan-step-1').classList.remove('hidden');
     document.getElementById('scan-step-camera').classList.add('hidden');
     document.getElementById('scan-step-result').classList.add('hidden');
     currentBook = { isbn: null, title: '', author: '', coverUrl: '', inLibrary: false, status: null, borrower: null };
+    isScanning = false;
 }
 
 function startScanner() {
     document.getElementById('scan-step-1').classList.add('hidden');
     document.getElementById('scan-step-camera').classList.remove('hidden');
     document.getElementById('scan-step-result').classList.add('hidden');
+    isScanning = false;
 
-    if (!scanner) {
-        scanner = new Html5Qrcode("scanner-reader");
+    // Create new scanner instance each time for reliability
+    if (scanner) {
+        try { scanner.stop(); } catch(e) {}
     }
+    scanner = new Html5Qrcode("scanner-reader");
+
+    // Configure for EAN-13 barcodes (ISBN format)
+    const config = {
+        fps: 5,
+        qrbox: { width: 280, height: 80 },
+        formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ]
+    };
 
     scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 100 } },
+        config,
         handleBarcodeScan,
-        () => {} // Ignore errors
+        () => {} // Ignore scan errors
     ).then(() => {
-        showToast("Camera ready - point at barcode", "success");
+        showToast("Point camera at ISBN barcode", "success");
     }).catch(err => {
         console.error("Camera error:", err);
-        showToast("Cannot access camera", "error");
-        showScanStart();
+        // Try without format restriction
+        scanner.start(
+            { facingMode: "environment" },
+            { fps: 5, qrbox: { width: 280, height: 80 } },
+            handleBarcodeScan,
+            () => {}
+        ).then(() => {
+            showToast("Camera ready", "success");
+        }).catch(err2 => {
+            showToast("Cannot access camera", "error");
+            showScanStart();
+        });
     });
 }
 
 function stopScanner() {
-    if (scanner && scanner.isScanning) {
-        scanner.stop().catch(() => {});
+    if (scanner) {
+        try { scanner.stop(); } catch(e) {}
     }
 }
 
@@ -105,12 +128,29 @@ function stopScanner() {
 // STEP 2: HANDLE BARCODE SCAN
 // ============================================
 async function handleBarcodeScan(decodedText) {
-    // Stop scanner immediately
-    stopScanner();
+    // Prevent multiple scans
+    if (isScanning) return;
 
-    // Get the raw barcode value
-    const barcode = decodedText.trim();
-    console.log("Barcode scanned:", barcode);
+    // Clean the barcode - keep only digits
+    const barcode = decodedText.replace(/\D/g, '');
+
+    // Validate: ISBN-13 must be exactly 13 digits starting with 978 or 979
+    if (barcode.length !== 13) {
+        console.log("Not a valid ISBN-13:", decodedText);
+        return; // Keep scanning
+    }
+
+    if (!barcode.startsWith('978') && !barcode.startsWith('979')) {
+        console.log("Not an ISBN barcode:", barcode);
+        return; // Keep scanning
+    }
+
+    // Valid ISBN-13 found!
+    isScanning = true;
+    console.log("Valid ISBN-13 scanned:", barcode);
+
+    // Stop scanner
+    stopScanner();
 
     // Vibrate feedback
     if (navigator.vibrate) navigator.vibrate(200);
@@ -120,7 +160,7 @@ async function handleBarcodeScan(decodedText) {
     document.getElementById('scan-step-camera').classList.add('hidden');
     document.getElementById('scan-step-result').classList.remove('hidden');
 
-    // Display barcode immediately
+    // Display ISBN immediately
     document.getElementById('result-isbn').textContent = barcode;
     document.getElementById('result-title').textContent = 'Looking up book...';
     document.getElementById('result-author').textContent = '';

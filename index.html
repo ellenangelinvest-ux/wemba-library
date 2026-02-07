@@ -48,7 +48,7 @@
             <!-- Step 2: Camera Active -->
             <div id="scan-step-camera" class="scan-step hidden">
                 <div id="scanner-reader"></div>
-                <p class="scan-hint">Point camera at book barcode</p>
+                <p class="scan-hint">Point at ISBN barcode (starts with 978 or 979)</p>
                 <button class="btn-secondary" onclick="showScanStart()">Cancel</button>
             </div>
 
@@ -59,7 +59,7 @@
                     <img id="result-cover" src="" alt="Book cover"
                          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22><rect fill=%22%23ddd%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2210%22>No Cover</text></svg>'">
                     <div class="result-info">
-                        <p class="result-isbn-label">Barcode: <strong id="result-isbn"></strong></p>
+                        <p class="result-isbn-label">ISBN-13: <strong id="result-isbn"></strong></p>
                         <h3 id="result-title">Looking up...</h3>
                         <p id="result-author"></p>
                         <p id="result-status" class="result-status"></p>
