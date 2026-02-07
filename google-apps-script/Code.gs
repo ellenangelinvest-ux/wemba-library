@@ -2,7 +2,7 @@
  * WEMBA SF Library Tracker - Google Apps Script Backend
  *
  * SHEETS STRUCTURE:
- * Books: ISBN | Title | Author | Status | Current Borrower | Borrow Date
+ * Books: ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
  * Transactions: ISBN | Title | Action | Name | Phone | Date
  */
 
@@ -93,16 +93,17 @@ function getBook(isbn) {
   const sheet = ss.getSheetByName(BOOKS_SHEET);
   const data = sheet.getDataRange().getValues();
 
-  // Columns: ISBN | Title | Author | Status | Current Borrower | Borrow Date
+  // Columns: ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(isbn)) {
       return {
         isbn: data[i][0],
         title: data[i][1],
         author: data[i][2],
-        status: data[i][3] || 'Available',
-        currentBorrower: data[i][4] || '',
-        borrowDate: data[i][5] || ''
+        donor: data[i][3] || '',
+        status: data[i][4] || 'Available',
+        currentBorrower: data[i][5] || '',
+        borrowDate: data[i][6] || ''
       };
     }
   }
@@ -123,9 +124,10 @@ function getAllBooks() {
         isbn: data[i][0],
         title: data[i][1],
         author: data[i][2],
-        status: data[i][3] || 'Available',
-        currentBorrower: data[i][4] || '',
-        borrowDate: data[i][5] || ''
+        donor: data[i][3] || '',
+        status: data[i][4] || 'Available',
+        currentBorrower: data[i][5] || '',
+        borrowDate: data[i][6] || ''
       });
     }
   }
@@ -148,11 +150,12 @@ function addBook(data) {
   const now = new Date().toLocaleDateString();
 
   // Add to Books sheet
-  // ISBN | Title | Author | Status | Current Borrower | Borrow Date
+  // ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
   sheet.appendRow([
     data.isbn,
     data.title,
     data.author,
+    data.donor || '',  // Donor (optional)
     'Available',
     '',  // Current Borrower
     ''   // Borrow Date
@@ -163,7 +166,7 @@ function addBook(data) {
     data.isbn,
     data.title,
     'Added to Library',
-    '',
+    data.donor || '',
     '',
     now
   ]);
@@ -194,11 +197,13 @@ function borrowBook(data) {
   }
 
   // If book not found, add it first
+  // ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
   if (bookRow === -1) {
     sheet.appendRow([
       data.isbn,
       data.title || 'Unknown',
       data.author || 'Unknown',
+      '',  // Donor
       'Borrowed',
       data.borrowerName,
       now
@@ -216,15 +221,15 @@ function borrowBook(data) {
     return { success: true, message: 'Book added and borrowed' };
   }
 
-  // Check if available
-  if (booksData[bookRow - 1][3] === 'Borrowed') {
-    return { error: 'Book is already borrowed by ' + booksData[bookRow - 1][4] };
+  // Check if available (Status is now column 5, index 4)
+  if (booksData[bookRow - 1][4] === 'Borrowed') {
+    return { error: 'Book is already borrowed by ' + booksData[bookRow - 1][5] };
   }
 
   // Update book status
-  sheet.getRange(bookRow, 4).setValue('Borrowed');        // Status
-  sheet.getRange(bookRow, 5).setValue(data.borrowerName); // Current Borrower
-  sheet.getRange(bookRow, 6).setValue(now);               // Borrow Date
+  sheet.getRange(bookRow, 5).setValue('Borrowed');        // Status (column 5)
+  sheet.getRange(bookRow, 6).setValue(data.borrowerName); // Current Borrower (column 6)
+  sheet.getRange(bookRow, 7).setValue(now);               // Borrow Date (column 7)
 
   // Log transaction
   transSheet.appendRow([
@@ -253,11 +258,12 @@ function returnBook(data) {
   let bookTitle = '';
   let borrowerName = '';
 
+  // Columns: ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
   for (let i = 1; i < booksData.length; i++) {
     if (String(booksData[i][0]) === String(data.isbn)) {
       bookRow = i + 1;
       bookTitle = booksData[i][1];
-      borrowerName = booksData[i][4];
+      borrowerName = booksData[i][5];  // Current Borrower is column 6 (index 5)
       break;
     }
   }
@@ -267,9 +273,9 @@ function returnBook(data) {
   }
 
   // Update book status - clear borrower info
-  sheet.getRange(bookRow, 4).setValue('Available');  // Status
-  sheet.getRange(bookRow, 5).setValue('');           // Current Borrower
-  sheet.getRange(bookRow, 6).setValue('');           // Borrow Date
+  sheet.getRange(bookRow, 5).setValue('Available');  // Status (column 5)
+  sheet.getRange(bookRow, 6).setValue('');           // Current Borrower (column 6)
+  sheet.getRange(bookRow, 7).setValue('');           // Borrow Date (column 7)
 
   // Log transaction with return date
   transSheet.appendRow([
@@ -297,8 +303,9 @@ function getOverdueBooks() {
 
   const borrowed = [];
 
+  // Columns: ISBN | Title | Author | Donor | Status | Current Borrower | Borrow Date
   for (let i = 1; i < booksData.length; i++) {
-    if (booksData[i][3] === 'Borrowed') {
+    if (booksData[i][4] === 'Borrowed') {  // Status is column 5 (index 4)
       const isbn = booksData[i][0];
 
       // Find phone number from transactions
@@ -313,8 +320,8 @@ function getOverdueBooks() {
       borrowed.push({
         isbn: isbn,
         title: booksData[i][1],
-        borrowerName: booksData[i][4],
-        borrowDate: booksData[i][5],
+        borrowerName: booksData[i][5],  // Current Borrower (index 5)
+        borrowDate: booksData[i][6],    // Borrow Date (index 6)
         whatsapp: whatsapp
       });
     }
@@ -335,11 +342,11 @@ function setupSheets() {
   if (!booksSheet) {
     booksSheet = ss.insertSheet(BOOKS_SHEET);
   }
-  // Set headers
-  booksSheet.getRange(1, 1, 1, 6).setValues([[
-    'ISBN', 'Title', 'Author', 'Status', 'Current Borrower', 'Borrow Date'
+  // Set headers - 7 columns
+  booksSheet.getRange(1, 1, 1, 7).setValues([[
+    'ISBN', 'Title', 'Author', 'Donor', 'Status', 'Current Borrower', 'Borrow Date'
   ]]);
-  booksSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  booksSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
   booksSheet.setFrozenRows(1);
 
   // Transactions sheet
