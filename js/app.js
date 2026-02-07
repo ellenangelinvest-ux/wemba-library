@@ -74,27 +74,15 @@ function startScanner() {
     document.getElementById('scan-step-camera').classList.remove('hidden');
     document.getElementById('scan-step-2').classList.add('hidden');
 
-    // Create scanner with barcode formats (ISBN barcodes are EAN-13)
+    // Create scanner - use simple config for maximum compatibility
     if (!scanner) {
-        try {
-            scanner = new Html5Qrcode("scanner-reader", {
-                formatsToSupport: [
-                    Html5QrcodeSupportedFormats.EAN_13,
-                    Html5QrcodeSupportedFormats.EAN_8,
-                    Html5QrcodeSupportedFormats.UPC_A,
-                    Html5QrcodeSupportedFormats.UPC_E
-                ]
-            });
-        } catch (e) {
-            // Fallback if formats not supported
-            console.log("Using default scanner formats");
-            scanner = new Html5Qrcode("scanner-reader");
-        }
+        scanner = new Html5Qrcode("scanner-reader");
     }
 
     const config = {
         fps: 10,
-        qrbox: { width: 280, height: 120 }
+        qrbox: { width: 280, height: 100 },
+        aspectRatio: 1.0
     };
 
     scanner.start(
@@ -103,10 +91,11 @@ function startScanner() {
         onScanSuccess,
         () => {} // Ignore scan errors silently
     ).then(() => {
+        console.log("Scanner started successfully");
         showToast("Point camera at book barcode", "success");
     }).catch(err => {
         console.error("Scanner error:", err);
-        showToast("Camera access denied", "error");
+        showToast("Camera access denied: " + err, "error");
         resetScanView();
     });
 }
@@ -158,31 +147,33 @@ function isValidISBN(code) {
 async function onScanSuccess(scannedValue) {
     // Prevent multiple callbacks from processing
     if (isProcessingScan) {
-        console.log("Already processing a scan, ignoring...");
+        console.log("Already processing, ignoring duplicate scan");
         return;
     }
 
-    console.log("=== SCAN SUCCESS ===");
-    console.log("Raw scanned value:", scannedValue);
+    console.log("=== BARCODE SCANNED ===");
+    console.log("Raw value:", scannedValue);
+    console.log("Value length:", scannedValue ? scannedValue.length : 0);
 
     // Clean the scanned value - remove any non-numeric characters except X (for ISBN-10)
-    const cleanISBN = scannedValue.replace(/[^0-9X]/gi, '').toUpperCase();
-    console.log("Clean ISBN:", cleanISBN);
+    const cleanISBN = String(scannedValue).replace(/[^0-9X]/gi, '').toUpperCase();
+    console.log("Cleaned ISBN:", cleanISBN, "Length:", cleanISBN.length);
 
-    // Validate ISBN format: must be exactly 10 or 13 digits
-    // ISBN-13 starts with 978 or 979
-    // ISBN-10 is 10 characters (last can be X)
+    // Validate ISBN format
     if (!isValidISBN(cleanISBN)) {
-        console.log("Invalid ISBN format, ignoring:", cleanISBN);
-        // Don't reset - keep scanning for a valid barcode
+        console.log("Invalid format - not a valid ISBN/barcode, continuing to scan...");
         return;
     }
+
+    console.log("Valid ISBN detected:", cleanISBN);
 
     // Lock to prevent duplicate processing
     isProcessingScan = true;
 
+    // Vibrate on successful scan
     if (navigator.vibrate) navigator.vibrate(200);
 
+    // Stop scanner immediately
     stopScanner();
 
     currentISBN = cleanISBN;
