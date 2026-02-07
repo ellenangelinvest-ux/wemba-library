@@ -324,25 +324,35 @@ function showActions(libraryStatus) {
 }
 
 // ============================================
-// API HELPER - Handle Google Apps Script CORS
+// API HELPER - Handle Google Apps Script
 // ============================================
 async function callAPI(data) {
-    // Google Apps Script requires special handling for CORS
-    // Use POST with text/plain to avoid preflight
-    const response = await fetch(CONFIG.API_URL, {
-        method: 'POST',
-        mode: 'cors',
-        headers: {
-            'Content-Type': 'text/plain',
-        },
-        body: JSON.stringify(data)
-    });
+    console.log("Calling API with:", data);
 
-    if (!response.ok) {
-        throw new Error('Network response was not ok');
+    try {
+        const response = await fetch(CONFIG.API_URL, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+
+        console.log("Response status:", response.status);
+        const text = await response.text();
+        console.log("Response text:", text);
+
+        // Try to parse as JSON
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.log("Could not parse as JSON, checking for success indicators");
+            if (text.toLowerCase().includes('success')) {
+                return { success: true };
+            }
+            return { success: false, error: 'Unexpected response' };
+        }
+    } catch (e) {
+        console.error("Fetch error:", e);
+        throw e;
     }
-
-    return await response.json();
 }
 
 // ============================================
