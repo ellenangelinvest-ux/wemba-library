@@ -18,6 +18,7 @@ let currentBookInfo = null;
 let currentBookStatus = null; // 'new', 'available', 'borrowed'
 let booksCache = [];
 let isProcessingScan = false; // Prevent multiple scan callbacks
+let recentScans = []; // Store recent scans to find consistent reading
 
 // ============================================
 // INITIALIZATION
@@ -67,8 +68,9 @@ function switchView(viewName) {
 function startScanner() {
     console.log("Starting scanner...");
 
-    // Reset processing flag when starting new scan
+    // Reset processing flag and scan history
     isProcessingScan = false;
+    recentScans = [];
 
     document.getElementById('scan-step-1').classList.add('hidden');
     document.getElementById('scan-step-camera').classList.remove('hidden');
@@ -119,7 +121,8 @@ function resetScanView() {
     currentISBN = null;
     currentBookInfo = null;
     currentBookStatus = null;
-    isProcessingScan = false; // Reset the lock
+    isProcessingScan = false;
+    recentScans = []; // Clear scan history
 }
 
 // Validate barcode format (ISBN-10, ISBN-13, or other EAN barcodes)
@@ -147,34 +150,51 @@ function isValidISBN(code) {
 async function onScanSuccess(scannedValue) {
     // Prevent multiple callbacks from processing
     if (isProcessingScan) {
-        console.log("Already processing, ignoring duplicate scan");
         return;
     }
 
-    console.log("=== BARCODE SCANNED ===");
-    console.log("Raw value:", scannedValue);
-    console.log("Value length:", scannedValue ? scannedValue.length : 0);
-
-    // Clean the scanned value - remove any non-numeric characters except X (for ISBN-10)
+    // Clean the scanned value
     const cleanISBN = String(scannedValue).replace(/[^0-9X]/gi, '').toUpperCase();
-    console.log("Cleaned ISBN:", cleanISBN, "Length:", cleanISBN.length);
 
     // Validate ISBN format
     if (!isValidISBN(cleanISBN)) {
-        console.log("Invalid format - not a valid ISBN/barcode, continuing to scan...");
         return;
     }
 
-    console.log("Valid ISBN detected:", cleanISBN);
+    console.log("Scanned:", cleanISBN);
+
+    // Add to recent scans
+    recentScans.push(cleanISBN);
+
+    // Keep only last 3 scans
+    if (recentScans.length > 3) {
+        recentScans.shift();
+    }
+
+    // Require at least 2 identical consecutive scans for reliability
+    if (recentScans.length >= 2) {
+        const lastTwo = recentScans.slice(-2);
+        if (lastTwo[0] !== lastTwo[1]) {
+            console.log("Inconsistent reads, waiting for stable scan...");
+            return;
+        }
+    } else {
+        // Need at least 2 scans
+        return;
+    }
+
+    console.log("=== CONFIRMED BARCODE ===");
+    console.log("ISBN:", cleanISBN);
 
     // Lock to prevent duplicate processing
     isProcessingScan = true;
-
-    // Vibrate on successful scan
-    if (navigator.vibrate) navigator.vibrate(200);
+    recentScans = []; // Clear for next scan
 
     // Stop scanner immediately
     stopScanner();
+
+    // Vibrate on successful scan
+    if (navigator.vibrate) navigator.vibrate(200);
 
     currentISBN = cleanISBN;
 
