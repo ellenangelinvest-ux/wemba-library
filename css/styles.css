@@ -169,8 +169,8 @@ main {
     color: var(--gray-600);
 }
 
-/* Scanned Book Card */
-.scanned-book-card {
+/* Result Card */
+.result-card {
     background: var(--white);
     border-radius: 12px;
     padding: 1.25rem;
@@ -180,7 +180,7 @@ main {
     margin-bottom: 1rem;
 }
 
-.scanned-book-card img {
+.result-card img {
     width: 80px;
     height: 120px;
     object-fit: cover;
@@ -188,37 +188,45 @@ main {
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
-.scanned-book-info {
+.result-info {
     flex: 1;
 }
 
-.scanned-book-info h3 {
+.result-info h3 {
     font-size: 1.1rem;
     margin-bottom: 0.25rem;
     line-height: 1.3;
+    color: var(--gray-800);
 }
 
-.scanned-book-info p {
+.result-info p {
     color: var(--gray-600);
     font-size: 0.9rem;
     margin-bottom: 0.25rem;
 }
 
-.isbn-display {
+.result-isbn-label {
     font-size: 0.8rem !important;
     color: var(--gray-600);
+    margin-bottom: 0.5rem !important;
 }
 
-.book-status {
+.result-isbn-label strong {
+    color: var(--primary);
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.result-status {
     display: inline-block;
-    padding: 0.25rem 0.75rem;
+    padding: 0.35rem 0.75rem;
     border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: 0.85rem;
+    font-weight: 600;
     margin-top: 0.5rem;
 }
 
-.status-new {
+.status-not-in-library {
     background: #e2e8f0;
     color: #4a5568;
 }
@@ -245,12 +253,11 @@ main {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 1rem;
+    padding: 1rem 1.5rem;
     border: none;
     border-radius: 10px;
     font-size: 1.1rem;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
 }
@@ -258,10 +265,6 @@ main {
 .btn-action:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.btn-icon {
-    font-size: 1.3rem;
 }
 
 .btn-add {

@@ -33,7 +33,7 @@
 
         <!-- Scan View -->
         <section id="scan-view" class="view">
-            <!-- Step 1: Scan Button -->
+            <!-- Step 1: Start Scan -->
             <div id="scan-step-1" class="scan-step">
                 <div class="scan-prompt">
                     <div class="scan-icon">📷</div>
@@ -45,84 +45,81 @@
                 </div>
             </div>
 
-            <!-- Scanner Active -->
+            <!-- Step 2: Camera Active -->
             <div id="scan-step-camera" class="scan-step hidden">
                 <div id="scanner-reader"></div>
                 <p class="scan-hint">Point camera at book barcode</p>
-                <button class="btn-secondary" onclick="stopAndReset()">Cancel</button>
+                <button class="btn-secondary" onclick="showScanStart()">Cancel</button>
             </div>
 
-            <!-- Step 2: Book Info + Actions -->
-            <div id="scan-step-2" class="scan-step hidden">
-                <div class="scanned-book-card">
-                    <img id="scanned-book-cover" src="" alt="Book cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22><rect fill=%22%23ddd%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2210%22>No Cover</text></svg>'">
-                    <div class="scanned-book-info">
-                        <h3 id="scanned-book-title">Book Title</h3>
-                        <p id="scanned-book-author">Author</p>
-                        <p class="isbn-display">ISBN: <span id="scanned-book-isbn"></span></p>
-                        <p id="scanned-book-status" class="book-status"></p>
+            <!-- Step 3: Result + Actions -->
+            <div id="scan-step-result" class="scan-step hidden">
+                <!-- Book Info Card -->
+                <div class="result-card">
+                    <img id="result-cover" src="" alt="Book cover"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22><rect fill=%22%23ddd%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2210%22>No Cover</text></svg>'">
+                    <div class="result-info">
+                        <p class="result-isbn-label">Barcode: <strong id="result-isbn"></strong></p>
+                        <h3 id="result-title">Looking up...</h3>
+                        <p id="result-author"></p>
+                        <p id="result-status" class="result-status"></p>
                     </div>
                 </div>
 
                 <!-- Action Buttons -->
                 <div class="action-buttons">
-                    <button id="btn-add-book" class="btn-action btn-add" onclick="showAddForm()">
-                        <span class="btn-icon">➕</span>
+                    <button id="action-add" class="btn-action btn-add hidden" onclick="showAddForm()">
                         Add to Library
                     </button>
-                    <button id="btn-borrow" class="btn-action btn-borrow" onclick="showBorrowForm()">
-                        <span class="btn-icon">📤</span>
+                    <button id="action-borrow" class="btn-action btn-borrow hidden" onclick="showBorrowForm()">
                         Borrow Book
                     </button>
-                    <button id="btn-return" class="btn-action btn-return" onclick="confirmReturn()">
-                        <span class="btn-icon">📥</span>
+                    <button id="action-return" class="btn-action btn-return hidden" onclick="submitReturn()">
                         Return Book
                     </button>
                 </div>
 
-                <!-- Borrow Form -->
-                <div id="borrow-form" class="action-form hidden">
-                    <h4>Borrower Information</h4>
-                    <div class="form-group">
-                        <label for="borrower-name">Name</label>
-                        <input type="text" id="borrower-name" required placeholder="Enter your name">
-                    </div>
-                    <div class="form-group">
-                        <label for="borrower-phone">Phone / WhatsApp</label>
-                        <input type="tel" id="borrower-phone" required placeholder="+1 555 123 4567">
-                    </div>
-                    <div class="form-group">
-                        <label for="due-date">Due Date</label>
-                        <input type="date" id="due-date" required>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="hideActionForms()">Cancel</button>
-                        <button type="button" class="btn-primary" onclick="submitBorrow()">Confirm Borrow</button>
-                    </div>
-                </div>
-
-                <!-- Add Book Form (for new books) -->
-                <div id="add-form" class="action-form hidden">
+                <!-- Add Book Form -->
+                <div id="form-add" class="action-form hidden">
                     <h4>Add Book to Library</h4>
                     <div class="form-group">
                         <label for="add-title">Title *</label>
-                        <input type="text" id="add-title" required placeholder="Book title">
+                        <input type="text" id="add-title" placeholder="Book title">
                     </div>
                     <div class="form-group">
                         <label for="add-author">Author *</label>
-                        <input type="text" id="add-author" required placeholder="Author name">
+                        <input type="text" id="add-author" placeholder="Author name">
                     </div>
                     <div class="form-group">
                         <label for="add-donor">Donated By (optional)</label>
                         <input type="text" id="add-donor" placeholder="Donor name">
                     </div>
                     <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="hideActionForms()">Cancel</button>
                         <button type="button" class="btn-primary" onclick="submitAddBook()">Add to Library</button>
                     </div>
                 </div>
 
-                <button class="btn-text" onclick="stopAndReset()">← Scan Another Book</button>
+                <!-- Borrow Form -->
+                <div id="form-borrow" class="action-form hidden">
+                    <h4>Borrower Information</h4>
+                    <div class="form-group">
+                        <label for="borrower-name">Your Name *</label>
+                        <input type="text" id="borrower-name" placeholder="Enter your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="borrower-phone">WhatsApp / Phone *</label>
+                        <input type="tel" id="borrower-phone" placeholder="+1 555 123 4567">
+                    </div>
+                    <div class="form-group">
+                        <label for="due-date">Due Date</label>
+                        <input type="date" id="due-date">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-primary" onclick="submitBorrow()">Confirm Borrow</button>
+                    </div>
+                </div>
+
+                <button class="btn-text" onclick="showScanStart()">← Scan Another Book</button>
             </div>
         </section>
 
