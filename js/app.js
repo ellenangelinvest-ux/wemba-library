@@ -167,6 +167,8 @@ async function lookupAndDisplayBook(isbn) {
     console.log("=== LOOKING UP BOOK ===");
     console.log("ISBN:", isbn);
 
+    showToast("Searching databases for ISBN: " + isbn, "");
+
     // Get book details from Open Library / Google Books
     let bookInfo = { title: '', author: '', coverUrl: null, found: false };
 
@@ -175,6 +177,7 @@ async function lookupAndDisplayBook(isbn) {
         console.log("Book info result:", bookInfo);
     } catch (e) {
         console.error("fetchBookInfo error:", e);
+        showToast("Lookup error: " + e.message, "error");
     }
 
     currentBookInfo = bookInfo;
@@ -256,84 +259,80 @@ async function lookupAndDisplayBook(isbn) {
 
 async function fetchBookInfo(isbn) {
     const cleanISBN = isbn.replace(/[-\s]/g, '');
-    console.log("Fetching book info for:", cleanISBN);
+    console.log("=== FETCHING BOOK INFO ===");
+    console.log("ISBN:", cleanISBN);
 
-    // Try Open Library first
+    // Try Google Books FIRST (more reliable CORS)
     try {
-        console.log("Trying Open Library...");
-        const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`;
+        console.log("1. Trying Google Books API...");
+        const googleUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`;
+        console.log("URL:", googleUrl);
 
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-        });
+        const googleResponse = await fetch(googleUrl);
+        console.log("Google response status:", googleResponse.status);
 
-        if (response.ok) {
-            const text = await response.text();
-            console.log("Open Library raw response:", text);
+        if (googleResponse.ok) {
+            const googleData = await googleResponse.json();
+            console.log("Google data:", googleData);
 
-            if (text && text !== '{}') {
-                const data = JSON.parse(text);
-                const key = `ISBN:${cleanISBN}`;
-
-                if (data[key]) {
-                    const book = data[key];
-                    console.log("Found in Open Library:", book.title);
-
-                    const coverUrl = book.cover ? (book.cover.medium || book.cover.large || book.cover.small) : null;
-
-                    return {
-                        title: book.title || 'Unknown Title',
-                        author: book.authors ? book.authors.map(a => a.name).join(', ') : 'Unknown Author',
-                        coverUrl: coverUrl,
-                        found: true
-                    };
-                }
-            }
-        }
-        console.log("Not found in Open Library");
-    } catch (e) {
-        console.error("Open Library error:", e);
-    }
-
-    // Try Google Books as fallback
-    try {
-        console.log("Trying Google Books...");
-        const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`;
-
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            console.log("Google Books response:", data);
-
-            if (data.items && data.items.length > 0) {
-                const book = data.items[0].volumeInfo;
-                console.log("Found in Google Books:", book.title);
+            if (googleData.items && googleData.items.length > 0) {
+                const book = googleData.items[0].volumeInfo;
+                console.log("SUCCESS - Found in Google Books:", book.title);
 
                 let coverUrl = null;
                 if (book.imageLinks) {
-                    coverUrl = (book.imageLinks.thumbnail || book.imageLinks.smallThumbnail || '').replace('http:', 'https:');
+                    coverUrl = (book.imageLinks.thumbnail || book.imageLinks.smallThumbnail || '')
+                        .replace('http://', 'https://');
                 }
 
                 return {
-                    title: book.title || 'Unknown Title',
-                    author: book.authors ? book.authors.join(', ') : 'Unknown Author',
-                    coverUrl: coverUrl,
+                    title: book.title || '',
+                    author: book.authors ? book.authors.join(', ') : '',
+                    coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${cleanISBN}-M.jpg`,
                     found: true
                 };
             }
         }
-        console.log("Not found in Google Books");
     } catch (e) {
-        console.error("Google Books error:", e);
+        console.error("Google Books error:", e.message);
     }
 
-    // Use Open Library cover as fallback even if book data not found
-    console.log("Book not found, using default cover");
+    // Try Open Library as backup
+    try {
+        console.log("2. Trying Open Library API...");
+        const openLibUrl = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`;
+        console.log("URL:", openLibUrl);
+
+        const openLibResponse = await fetch(openLibUrl);
+        console.log("Open Library response status:", openLibResponse.status);
+
+        if (openLibResponse.ok) {
+            const openLibData = await openLibResponse.json();
+            console.log("Open Library data:", openLibData);
+
+            const bookKey = `ISBN:${cleanISBN}`;
+            if (openLibData[bookKey]) {
+                const book = openLibData[bookKey];
+                console.log("SUCCESS - Found in Open Library:", book.title);
+
+                let coverUrl = null;
+                if (book.cover) {
+                    coverUrl = book.cover.medium || book.cover.large || book.cover.small;
+                }
+
+                return {
+                    title: book.title || '',
+                    author: book.authors ? book.authors.map(a => a.name).join(', ') : '',
+                    coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${cleanISBN}-M.jpg`,
+                    found: true
+                };
+            }
+        }
+    } catch (e) {
+        console.error("Open Library error:", e.message);
+    }
+
+    console.log("Book not found in any database");
     return {
         title: '',
         author: '',
