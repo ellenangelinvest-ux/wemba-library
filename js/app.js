@@ -167,20 +167,23 @@ async function lookupAndDisplayBook(isbn) {
     console.log("=== LOOKING UP BOOK ===");
     console.log("ISBN:", isbn);
 
-    showToast("Searching databases for ISBN: " + isbn, "");
+    showToast("Searching book databases...", "");
 
     // Get book details from Open Library / Google Books
     let bookInfo = { title: '', author: '', coverUrl: null, found: false };
 
     try {
+        console.log("Calling fetchBookInfo...");
         bookInfo = await fetchBookInfo(isbn);
-        console.log("Book info result:", bookInfo);
+        console.log("Book info result:", JSON.stringify(bookInfo));
     } catch (e) {
         console.error("fetchBookInfo error:", e);
         showToast("Lookup error: " + e.message, "error");
+        bookInfo = { title: '', author: '', coverUrl: null, found: false };
     }
 
     currentBookInfo = bookInfo;
+    console.log("currentBookInfo set to:", currentBookInfo);
 
     // Display book info
     const titleEl = document.getElementById('scanned-book-title');
@@ -251,9 +254,26 @@ async function lookupAndDisplayBook(isbn) {
     }
 
     if (bookInfo.found && bookInfo.title) {
-        showToast("Found: " + bookInfo.title, "success");
+        showToast("Found: " + bookInfo.title + (bookInfo.source ? ` (${bookInfo.source})` : ''), "success");
     } else {
-        showToast("Enter book details below", "");
+        showToast("Book not in database - enter details manually", "");
+    }
+
+    console.log("=== LOOKUP COMPLETE ===");
+}
+
+// Helper function to fetch with timeout
+async function fetchWithTimeout(url, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
     }
 }
 
@@ -262,74 +282,38 @@ async function fetchBookInfo(isbn) {
     console.log("=== FETCHING BOOK INFO ===");
     console.log("ISBN:", cleanISBN);
 
-    // Try Google Books FIRST (more reliable CORS)
+    // Try BOTH APIs in parallel for speed
+    const googlePromise = fetchFromGoogleBooks(cleanISBN);
+    const openLibPromise = fetchFromOpenLibrary(cleanISBN);
+
+    // Race: return first successful result
     try {
-        console.log("1. Trying Google Books API...");
-        const googleUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanISBN}`;
-        console.log("URL:", googleUrl);
-
-        const googleResponse = await fetch(googleUrl);
-        console.log("Google response status:", googleResponse.status);
-
-        if (googleResponse.ok) {
-            const googleData = await googleResponse.json();
-            console.log("Google data:", googleData);
-
-            if (googleData.items && googleData.items.length > 0) {
-                const book = googleData.items[0].volumeInfo;
-                console.log("SUCCESS - Found in Google Books:", book.title);
-
-                let coverUrl = null;
-                if (book.imageLinks) {
-                    coverUrl = (book.imageLinks.thumbnail || book.imageLinks.smallThumbnail || '')
-                        .replace('http://', 'https://');
-                }
-
-                return {
-                    title: book.title || '',
-                    author: book.authors ? book.authors.join(', ') : '',
-                    coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${cleanISBN}-M.jpg`,
-                    found: true
-                };
-            }
+        const result = await Promise.any([googlePromise, openLibPromise]);
+        if (result && result.found) {
+            console.log("SUCCESS - Found book:", result.title);
+            return result;
         }
     } catch (e) {
-        console.error("Google Books error:", e.message);
+        console.log("All APIs failed or returned no results");
     }
 
-    // Try Open Library as backup
+    // If race failed, try sequentially with more patience
+    console.log("Trying APIs sequentially...");
+
+    // Try Google Books
     try {
-        console.log("2. Trying Open Library API...");
-        const openLibUrl = `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`;
-        console.log("URL:", openLibUrl);
-
-        const openLibResponse = await fetch(openLibUrl);
-        console.log("Open Library response status:", openLibResponse.status);
-
-        if (openLibResponse.ok) {
-            const openLibData = await openLibResponse.json();
-            console.log("Open Library data:", openLibData);
-
-            const bookKey = `ISBN:${cleanISBN}`;
-            if (openLibData[bookKey]) {
-                const book = openLibData[bookKey];
-                console.log("SUCCESS - Found in Open Library:", book.title);
-
-                let coverUrl = null;
-                if (book.cover) {
-                    coverUrl = book.cover.medium || book.cover.large || book.cover.small;
-                }
-
-                return {
-                    title: book.title || '',
-                    author: book.authors ? book.authors.map(a => a.name).join(', ') : '',
-                    coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${cleanISBN}-M.jpg`,
-                    found: true
-                };
-            }
-        }
+        const result = await googlePromise;
+        if (result && result.found) return result;
     } catch (e) {
-        console.error("Open Library error:", e.message);
+        console.log("Google Books failed:", e.message);
+    }
+
+    // Try Open Library
+    try {
+        const result = await openLibPromise;
+        if (result && result.found) return result;
+    } catch (e) {
+        console.log("Open Library failed:", e.message);
     }
 
     console.log("Book not found in any database");
@@ -339,6 +323,82 @@ async function fetchBookInfo(isbn) {
         coverUrl: `https://covers.openlibrary.org/b/isbn/${cleanISBN}-M.jpg`,
         found: false
     };
+}
+
+async function fetchFromGoogleBooks(isbn) {
+    console.log("1. Trying Google Books API...");
+    const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`;
+
+    try {
+        const response = await fetchWithTimeout(url, 8000);
+        console.log("Google Books status:", response.status);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("Google Books response:", data.totalItems || 0, "items");
+
+        if (data.items && data.items.length > 0) {
+            const book = data.items[0].volumeInfo;
+            let coverUrl = null;
+            if (book.imageLinks) {
+                coverUrl = (book.imageLinks.thumbnail || book.imageLinks.smallThumbnail || '')
+                    .replace('http://', 'https://');
+            }
+
+            return {
+                title: book.title || '',
+                author: book.authors ? book.authors.join(', ') : '',
+                coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+                found: true,
+                source: 'Google Books'
+            };
+        }
+    } catch (e) {
+        console.error("Google Books error:", e.name, e.message);
+    }
+
+    return { found: false };
+}
+
+async function fetchFromOpenLibrary(isbn) {
+    console.log("2. Trying Open Library API...");
+    const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`;
+
+    try {
+        const response = await fetchWithTimeout(url, 8000);
+        console.log("Open Library status:", response.status);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const bookKey = `ISBN:${isbn}`;
+        console.log("Open Library response keys:", Object.keys(data));
+
+        if (data[bookKey]) {
+            const book = data[bookKey];
+            let coverUrl = null;
+            if (book.cover) {
+                coverUrl = book.cover.medium || book.cover.large || book.cover.small;
+            }
+
+            return {
+                title: book.title || '',
+                author: book.authors ? book.authors.map(a => a.name).join(', ') : '',
+                coverUrl: coverUrl || `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+                found: true,
+                source: 'Open Library'
+            };
+        }
+    } catch (e) {
+        console.error("Open Library error:", e.name, e.message);
+    }
+
+    return { found: false };
 }
 
 async function checkLibraryStatus(isbn) {
